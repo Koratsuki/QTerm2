@@ -93,6 +93,7 @@ private:
     void updateWindowTitle();
     void updateStatus();
     void showTunnels();
+    void showPlugins();
     void updateZoomHint();
     void adjustFontSize(int delta);
     void resetFontSize();

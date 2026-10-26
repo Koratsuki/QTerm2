@@ -1,3 +1,0 @@
-/usr/local/bin/QTerm2
-/usr/local/share/applications/QTerm2.desktop
-/usr/local/share/icons/hicolor/scalable/apps/QTerm2.svg

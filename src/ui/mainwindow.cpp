@@ -716,13 +716,16 @@ void MainWindow::buildMenus()
     viewMenu->addSeparator();
     viewMenu->addAction(m_actions.value(QStringLiteral("fullscreen")));
 
-    auto *helpMenu = menuBar()->addMenu(tr("A&yuda"));
-    helpMenu->addAction(m_actions.value(QStringLiteral("shortcuts")));
-    helpMenu->addAction(m_actions.value(QStringLiteral("about")));
-
     auto *toolsMenu = menuBar()->addMenu(tr("&Herramientas"));
     toolsMenu->addAction(tr("Túneles..."));
     connect(toolsMenu->actions().last(), &QAction::triggered, this, &MainWindow::showTunnels);
+    toolsMenu->addSeparator();
+    toolsMenu->addAction(tr("Plugins..."));
+    connect(toolsMenu->actions().last(), &QAction::triggered, this, &MainWindow::showPlugins);
+
+    auto *helpMenu = menuBar()->addMenu(tr("A&yuda"));
+    helpMenu->addAction(m_actions.value(QStringLiteral("shortcuts")));
+    helpMenu->addAction(m_actions.value(QStringLiteral("about")));
 }
 
 void MainWindow::buildToolbar()
@@ -751,12 +754,6 @@ void MainWindow::buildToolbar()
     auto *spacer = new QWidget(toolbar);
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     toolbar->addWidget(spacer);
-
-    auto *brand = new QLabel(QStringLiteral("QTerm2"), toolbar);
-    brand->setObjectName(QStringLiteral("Brand"));
-    toolbar->addWidget(brand);
-    toolbar->addWidget(toolbarButton(m_actions.value(QStringLiteral("prefs")),
-                                     QStringLiteral("\u2699"), toolbar));
 }
 
 void MainWindow::buildStatusBar()
@@ -1799,4 +1796,19 @@ void MainWindow::showTunnels()
 {
     qterm2::TunnelDialog dlg(m_tunnelManager, this);
     dlg.exec();
+}
+
+
+void MainWindow::showPlugins()
+{
+    QMessageBox::information(this, tr("Plugins"),
+        tr("<h3>Plugins (API v2)</h3>"
+           "<p>Los plugins se cargan automáticamente desde:</p>"
+           "<ul>"
+           "<li><b>~/.local/lib/qterm2/plugins/</b></li>"
+           "<li><b>./plugins/</b> (junto al binario)</li>"
+           "</ul>"
+           "<p>Formato: archivo .so con interfaz qterm2::Plugin (IID org.qterm2.QTerm2Plugin/1.0)</p>"
+           "<p>Capacidades: comandos, paneles, temas, backends. Sistema de permisos integrado.</p>"
+           "<p>Plugin Docker/Kubernetes disponible con comandos en la paleta de comandos (Ctrl+Shift+P).</p>"));
 }

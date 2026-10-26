@@ -194,18 +194,6 @@ Sidebar::Sidebar(SessionStore *store, QWidget *parent)
     m_count = new QLabel(this);
     m_count->setObjectName(QStringLiteral("Hint"));
     footer->addWidget(m_count, 1);
-
-    auto *localShortcut = new QToolButton(this);
-    localShortcut->setText(tr("Terminal local"));
-    localShortcut->setToolTip(tr("Abrir una terminal local (Ctrl+T)"));
-    localShortcut->setObjectName(QStringLiteral("SidebarAction"));
-    footer->addWidget(localShortcut);
-
-    auto *newSsh = new QToolButton(this);
-    newSsh->setText(tr("Nueva SSH"));
-    newSsh->setToolTip(tr("Configurar un nuevo servidor SSH"));
-    newSsh->setObjectName(QStringLiteral("SidebarPrimary"));
-    footer->addWidget(newSsh);
     layout->addLayout(footer);
 
     connect(m_filter, &QLineEdit::textChanged, this, [this] { updateFilter(); });
@@ -216,8 +204,6 @@ Sidebar::Sidebar(SessionStore *store, QWidget *parent)
         else if (a == localAction)
             emit newLocalRequested();
     });
-    connect(localShortcut, &QToolButton::clicked, this, &Sidebar::newLocalRequested);
-    connect(newSsh, &QToolButton::clicked, this, &Sidebar::newSshRequested);
 
     connect(m_tree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item) {
         if (!item)
