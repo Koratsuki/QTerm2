@@ -21,12 +21,13 @@ jobs:
             build-essential cmake ninja-build \
             qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
             libxkbcommon-dev libssl-dev pkg-config \
-            wget file libfuse2 fuse dpkg-dev rpm
+            wget file libfuse2 fuse dpkg-dev rpm \
+            libsqlite3-dev libssh2-1-dev
           
       - name: Build
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
-          cmake --build build -j$(nproc)
+          cmake --build build -j$(nproc) || (cat build/CMakeFiles/CMakeError.log && exit 1)
           
       - name: Package AppImage
         run: |
@@ -42,15 +43,14 @@ jobs:
           chmod +x appimagetool-x86_64.AppImage
           ./appimagetool-x86_64.AppImage AppDir QTerm2-x86_64.AppImage
           
-      - name: Build DEB
+      - name: Build DEB/RPM
         run: |
+          # DEB
           dpkg-buildpackage -us -uc -b
           mv ../*.deb .
-          
-      - name: Build RPM
-        run: |
+          # RPM
           mkdir -p ~/rpmbuild/{SOURCES,SPECS}
-          tar czf ~/rpmbuild/SOURCES/qterm2-1.0.5.tar.gz --exclude=.git .
+          tar czf ~/rpmbuild/SOURCES/qterm2-1.0.6.tar.gz --exclude=.git .
           cp packaging/rpm/qterm2.spec ~/rpmbuild/SPECS/
           rpmbuild -bb ~/rpmbuild/SPECS/qterm2.spec
           mv ~/rpmbuild/RPMS/*/*.rpm .
@@ -84,6 +84,8 @@ jobs:
           
       - name: Deploy Qt
         run: |
+          # Use the path from install-qt-action environment variables
+          $env:Path += ";${env:QT_ROOT}\bin"
           cd build\Release
           windeployqt.exe QTerm2.exe --release --no-translations --no-system-d3d-compiler --no-opengl-sw
           
@@ -110,7 +112,9 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            QTerm2-Linux/*
+            QTerm2-Linux/*.AppImage
+            QTerm2-Linux/*.deb
+            QTerm2-Linux/*.rpm
             QTerm2-Windows/*.zip
           draft: false
           prerelease: false
