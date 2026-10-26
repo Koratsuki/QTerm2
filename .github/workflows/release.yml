@@ -23,7 +23,7 @@ jobs:
             libxkbcommon-dev libssl-dev pkg-config \
             wget file libfuse2 fuse dpkg-dev rpm \
             libsqlite3-dev libssh2-1-dev \
-            libgl1-mesa-dev libglu1-mesa-dev
+            libgl1-mesa-dev libglu1-mesa-dev desktop-file-utils
           
       - name: Build
         run: |
@@ -42,7 +42,8 @@ jobs:
           chmod +x AppDir/AppRun
           wget -q https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
-          ./appimagetool-x86_64.AppImage AppDir QTerm2-x86_64.AppImage
+          # Use --appimage-extract-and-run to avoid FUSE issues
+          ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir QTerm2-x86_64.AppImage
           
       - name: Build DEB/RPM
         run: |
