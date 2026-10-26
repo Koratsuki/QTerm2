@@ -88,19 +88,37 @@ jobs:
           target: 'desktop'
           arch: 'win64_msvc2019_64'
           
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v3
+          
       - name: Build
+        shell: cmd
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --config Release -j $env:NUMBER_OF_PROCESSORS
+          call C:\Program^ Files\Microsoft^ Visual^ Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat -arch=x64
+          if %errorlevel% neq 0 exit /b %errorlevel%
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
+          if %errorlevel% neq 0 exit /b %errorlevel%
+          cmake --build build --config Release
+          if %errorlevel% neq 0 exit /b %errorlevel%
           
       - name: Deploy Qt
+        shell: cmd
         run: |
-          $QT_BIN = "${env:QT_ROOT}\bin"
-          & "$QT_BIN\windeployqt.exe" build\Release\QTerm2.exe --release --no-translations --no-system-d3d-compiler --no-opengl-sw
+          set PATH=%QT_ROOT%\bin;%PATH%
+          cd build
+          windeployqt.exe QTerm2.exe --release --no-translations --no-system-d3d-compiler --no-opengl-sw
           
       - name: Create ZIP
+        shell: cmd
         run: |
-          Compress-Archive -Path build\Release\* -DestinationPath QTerm2-Windows-x64.zip
+          mkdir staging
+          copy build\QTerm2.exe staging\
+          xcopy /E /I build\*.dll staging\ 2>nul || exit 0
+          REM Copy deployment files
+          xcopy /E /I build\iconengines staging\iconengines 2>nul || exit 0
+          xcopy /E /I build\imageformats staging\imageformats 2>nul || exit 0
+          xcopy /E /I build\platforms staging\platforms 2>nul || exit 0
+          Compress-Archive -Path staging\* -DestinationPath QTerm2-Windows-x64.zip
           
       - name: Upload Windows ZIP
         uses: actions/upload-artifact@v4
