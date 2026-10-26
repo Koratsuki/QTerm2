@@ -23,18 +23,16 @@ jobs:
           target: 'desktop'
           arch: 'win64_msvc2019_64'
           
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v3
           
       - name: Build
-        shell: cmd
         run: |
-          call C:\Program^ Files\Microsoft^ Visual^ Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat -arch=x64
-          if %errorlevel% neq 0 exit /b %errorlevel%
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
-          if %errorlevel% neq 0 exit /b %errorlevel%
           cmake --build build --config Release
-          if %errorlevel% neq 0 exit /b %errorlevel%
           
       - name: Deploy Qt
         shell: cmd
