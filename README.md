@@ -12,7 +12,7 @@ hoja de ruta están documentados en [`ARCHITECTURE.md`](ARCHITECTURE.md).
 ┌────────────────────────┬─────────────────────────────────────────────┐
 │ SESIONES            +  │  Producción — QTerm2                        │
 │ [buscar servidor…]     │  ┌─ pestañas ────────────────────────────┐  │
-│ Servidores · 2         │  │ ● Producción │ ● NAS │ ● Local       │  │
+│ Servidores · 2         │  │ ● Producción │ ● NAS │ ● Local        │  │
 │   ● Producción         │  └───────────────────────────────────────┘  │
 │   ● NAS de casa        │  usuario@servidor:~$ _                      │
 │ Locales · 1            │                                             │
