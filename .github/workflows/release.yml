@@ -36,7 +36,6 @@ jobs:
           cp build/QTerm2 AppDir/usr/bin/
           cp packaging/QTerm2.desktop AppDir/usr/share/applications/
           cp packaging/QTerm2.svg AppDir/usr/share/icons/hicolor/scalable/apps/QTerm2.svg
-          # Make sure icon is in the root too for appimagetool
           cp packaging/QTerm2.svg AppDir/QTerm2.svg
           ln -sf usr/share/applications/QTerm2.desktop AppDir/QTerm2.desktop
           ln -sf usr/share/icons/hicolor/scalable/apps/QTerm2.svg AppDir/.DirIcon
@@ -48,7 +47,8 @@ jobs:
           
       - name: Build DEB/RPM
         run: |
-          # DEB
+          # Prepare DEB
+          cp -r packaging/debian .
           dpkg-buildpackage -us -uc -b
           mv ../*.deb .
           # RPM
