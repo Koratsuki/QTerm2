@@ -36,13 +36,14 @@ jobs:
           cp build/QTerm2 AppDir/usr/bin/
           cp packaging/QTerm2.desktop AppDir/usr/share/applications/
           cp packaging/QTerm2.svg AppDir/usr/share/icons/hicolor/scalable/apps/QTerm2.svg
+          # Make sure icon is in the root too for appimagetool
+          cp packaging/QTerm2.svg AppDir/QTerm2.svg
           ln -sf usr/share/applications/QTerm2.desktop AppDir/QTerm2.desktop
           ln -sf usr/share/icons/hicolor/scalable/apps/QTerm2.svg AppDir/.DirIcon
           cp packaging/AppImage/AppRun AppDir/
           chmod +x AppDir/AppRun
           wget -q https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
-          # Skip desktop-file-validate to force the build
           ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir QTerm2-x86_64.AppImage --no-appstream
           
       - name: Build DEB/RPM
