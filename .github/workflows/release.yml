@@ -53,12 +53,14 @@ jobs:
           VERSION=$(git describe --tags --abbrev=0 | sed 's/v//')
           # Prepare DEB
           cp -r packaging/debian .
-          # Update changelog
-          EMAIL="koratsuki.nijuusan@gmail.com" dch -v ${VERSION}-1 --create --package qterm2 "Release ${VERSION}"
-          # Fix debhelper-compat to 13
+          # Update changelog - no --create, just add a new entry
+          export DEBEMAIL="koratsuki.nijuusan@gmail.com"
+          export DEBFULLNAME="Leslie León"
+          dch -v ${VERSION}-1 --distribution unstable "Release ${VERSION}"
+          # Fix debhelper-compat to 12
           sed -i 's/debhelper-compat (= 13)/debhelper-compat (= 12)/' debian/control || true
-          # Run build without Ninja for DEB (to avoid generator mismatch with dh_auto_build)
-          rm -rf build # Clear previous Ninja build
+          # Run build without Ninja for DEB
+          rm -rf build
           dpkg-buildpackage -us -uc -b
           mv ../*.deb .
           # RPM
