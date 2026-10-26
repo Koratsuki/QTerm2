@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build-linux-appimage:
+  build-linux:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -21,16 +21,16 @@ jobs:
             build-essential cmake ninja-build \
             qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
             libxkbcommon-dev libssl-dev pkg-config \
-            wget file libfuse2 fuse
+            wget file libfuse2 fuse dpkg-dev rpm
           
       - name: Build
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
           cmake --build build -j$(nproc)
           
-      - name: Create AppImage
+      - name: Package
         run: |
-          export APPIMAGE_EXTRACT_AND_RUN=1
+          # AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20250213-2/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage
           mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/scalable/apps
@@ -41,67 +41,19 @@ jobs:
           ln -sf usr/share/icons/hicolor/scalable/apps/QTerm2.svg AppDir/.DirIcon
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage || ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
           
-      - name: Upload AppImage
+          # DEB
+          dpkg-buildpackage -us -uc -b
+          
+          # Prepare artifacts
+          mkdir -p artifacts
+          mv *.AppImage artifacts/
+          mv ../*.deb artifacts/ || mv *.deb artifacts/
+          
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: QTerm2-AppImage
-          path: "*.AppImage"
-
-  build-linux-deb:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential cmake ninja-build \
-            qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
-            libxkbcommon-dev libssl-dev pkg-config \
-            debhelper devscripts fakeroot
-          
-      - name: Build .deb
-        run: |
-          dpkg-buildpackage -us -uc -b || true
-          mv ../*.deb . 2>/dev/null || true
-          
-      - name: Upload .deb
-        uses: actions/upload-artifact@v4
-        with:
-          name: QTerm2-DEB
-          path: "*.deb"
-
-  build-linux-rpm:
-    runs-on: ubuntu-22.04
-    container:
-      image: fedora:latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install dependencies
-        run: |
-          dnf install -y \
-            cmake ninja-build gcc-c++ git \
-            qt6-qtbase-devel qt6-qttools-devel \
-            libxkbcommon-devel openssl-devel \
-            rpm-build rpmdevtools
-          
-      - name: Build .rpm
-        run: |
-          rpmdev-setuptree
-          VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/v//' || echo "1.0.0")
-          mkdir -p ~/rpmbuild/SOURCES/qterm2-${VERSION}
-          cp -r . ~/rpmbuild/SOURCES/qterm2-${VERSION}/
-          tar czf ~/rpmbuild/SOURCES/qterm2-${VERSION}.tar.gz -C ~/rpmbuild/SOURCES qterm2-${VERSION}
-          sed "s/Version:.*/Version:        ${VERSION}/" packaging/rpm/qterm2.spec > ~/rpmbuild/SPECS/qterm2.spec
-          rpmbuild -bb ~/rpmbuild/SPECS/qterm2.spec || true
-          
-      - name: Upload .rpm
-        uses: actions/upload-artifact@v4
-        with:
-          name: QTerm2-RPM
-          path: ~/rpmbuild/RPMS/*/*.rpm
+          name: QTerm2-Linux
+          path: artifacts/*
 
   build-windows:
     runs-on: windows-latest
@@ -114,7 +66,7 @@ jobs:
           version: '6.6.0'
           host: 'windows'
           target: 'desktop'
-          arch: 'win64_msvc2022_64'
+          arch: 'win64_msvc2019_64'
           
       - name: Build
         run: |
@@ -126,7 +78,7 @@ jobs:
           cd build\Release
           windeployqt.exe QTerm2.exe --release --no-translations --no-system-d3d-compiler --no-opengl-sw
           
-      - name: Create ZIP with all dependencies
+      - name: Create ZIP
         run: |
           Compress-Archive -Path build\Release\* -DestinationPath QTerm2-Windows-x64.zip
           
@@ -135,24 +87,19 @@ jobs:
         with:
           name: QTerm2-Windows
           path: QTerm2-Windows-x64.zip
-
+          
   release:
-    needs: [build-linux-appimage, build-linux-deb, build-linux-rpm, build-windows]
-    if: always()
+    needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
-        continue-on-error: true
         
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            QTerm2-AppImage/*.AppImage
-            QTerm2-DEB/*.deb
-            QTerm2-RPM/*/*.rpm
-            QTerm2-RPM/*/*/*.rpm
+            QTerm2-Linux/*
             QTerm2-Windows/*.zip
           draft: false
           prerelease: false
