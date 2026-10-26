@@ -1,0 +1,62 @@
+name: Build and Release Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.6.0'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v3
+          
+      - name: Build
+        shell: cmd
+        run: |
+          call C:\Program^ Files\Microsoft^ Visual^ Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat -arch=x64
+          if %errorlevel% neq 0 exit /b %errorlevel%
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
+          if %errorlevel% neq 0 exit /b %errorlevel%
+          cmake --build build --config Release
+          if %errorlevel% neq 0 exit /b %errorlevel%
+          
+      - name: Deploy Qt
+        shell: cmd
+        run: |
+          set PATH=%QT_ROOT%\bin;%PATH%
+          cd build
+          windeployqt.exe QTerm2.exe --release --no-translations --no-system-d3d-compiler --no-opengl-sw
+          
+      - name: Create ZIP
+        shell: cmd
+        run: |
+          mkdir staging
+          copy build\QTerm2.exe staging\
+          xcopy /E /I build\*.dll staging\ 2>nul || exit 0
+          xcopy /E /I build\iconengines staging\iconengines 2>nul || exit 0
+          xcopy /E /I build\imageformats staging\imageformats 2>nul || exit 0
+          xcopy /E /I build\platforms staging\platforms 2>nul || exit 0
+          Compress-Archive -Path staging\* -DestinationPath QTerm2-Windows-x64.zip
+          
+      - name: Upload Windows ZIP & Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: QTerm2-Windows-x64.zip
+          draft: false
+          prerelease: false

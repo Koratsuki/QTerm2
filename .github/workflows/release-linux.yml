@@ -1,0 +1,76 @@
+name: Build and Release Linux
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build \
+            qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
+            libxkbcommon-dev libssl-dev pkg-config \
+            wget file libfuse2 fuse dpkg-dev rpm \
+            libsqlite3-dev libssh2-1-dev \
+            libgl1-mesa-dev libglu1-mesa-dev desktop-file-utils \
+            debhelper devscripts
+          
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
+          cmake --build build -j$(nproc)
+          
+      - name: Package AppImage
+        run: |
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/scalable/apps
+          cp build/QTerm2 AppDir/usr/bin/
+          cp packaging/QTerm2.desktop AppDir/usr/share/applications/
+          cp packaging/QTerm2.svg AppDir/usr/share/icons/hicolor/scalable/apps/QTerm2.svg
+          cp packaging/QTerm2.svg AppDir/QTerm2.svg
+          ln -sf usr/share/applications/QTerm2.desktop AppDir/QTerm2.desktop
+          ln -sf usr/share/icons/hicolor/scalable/apps/QTerm2.svg AppDir/.DirIcon
+          cp packaging/AppImage/AppRun AppDir/
+          chmod +x AppDir/AppRun
+          wget -q https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir QTerm2-x86_64.AppImage --no-appstream
+          
+      - name: Build DEB/RPM
+        run: |
+          VERSION=$(git describe --tags --abbrev=0 | sed 's/v//')
+          cp -r packaging/debian .
+          sed -i "s/qterm2 (.*)/qterm2 (${VERSION}-1)/" debian/changelog
+          sed -i 's/debhelper-compat (= 13)/debhelper-compat (= 12)/' debian/control || true
+          rm -rf build
+          dpkg-buildpackage -us -uc -b
+          mv ../*.deb .
+          mkdir -p ~/rpmbuild/{SOURCES,SPECS}
+          tar czf ~/rpmbuild/SOURCES/qterm2-${VERSION}.tar.gz --exclude=.git .
+          sed "s/Version:.*/Version:        ${VERSION}/" packaging/rpm/qterm2.spec > ~/rpmbuild/SPECS/qterm2.spec
+          sed -i "s/Source0:.*/Source0:        qterm2-${VERSION}.tar.gz/" ~/rpmbuild/SPECS/qterm2.spec
+          rpmbuild -bb --nodeps ~/rpmbuild/SPECS/qterm2.spec
+          mv ~/rpmbuild/RPMS/*/*.rpm .
+          
+      - name: Upload Linux Artifacts & Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            *.AppImage
+            *.deb
+            *.rpm
+          draft: false
+          prerelease: false
