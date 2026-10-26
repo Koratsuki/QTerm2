@@ -53,21 +53,18 @@ jobs:
           VERSION=$(git describe --tags --abbrev=0 | sed 's/v//')
           # Prepare DEB
           cp -r packaging/debian .
-          # Force update version in changelog using sed instead of dch to avoid errors
           sed -i "s/qterm2 (.*)/qterm2 (${VERSION}-1)/" debian/changelog
-          # Fix debhelper-compat
           sed -i 's/debhelper-compat (= 13)/debhelper-compat (= 12)/' debian/control || true
-          # Run build without Ninja for DEB
-          rm -rf build
+          rm -rf build # Clear for DEB
           dpkg-buildpackage -us -uc -b
           mv ../*.deb .
           # RPM
           mkdir -p ~/rpmbuild/{SOURCES,SPECS}
           tar czf ~/rpmbuild/SOURCES/qterm2-${VERSION}.tar.gz --exclude=.git .
           sed "s/Version:.*/Version:        ${VERSION}/" packaging/rpm/qterm2.spec > ~/rpmbuild/SPECS/qterm2.spec
-          # Update source in spec as well
           sed -i "s/Source0:.*/Source0:        qterm2-${VERSION}.tar.gz/" ~/rpmbuild/SPECS/qterm2.spec
-          rpmbuild -bb ~/rpmbuild/SPECS/qterm2.spec
+          # Use --nodeps because we are on Ubuntu and don't have RPM-named dev packages
+          rpmbuild -bb --nodeps ~/rpmbuild/SPECS/qterm2.spec
           mv ~/rpmbuild/RPMS/*/*.rpm .
           
       - name: Upload Linux Artifacts
@@ -99,9 +96,9 @@ jobs:
           
       - name: Deploy Qt
         run: |
-          $env:Path += ";${env:QT_ROOT}\bin"
-          cd build\Release
-          windeployqt.exe QTerm2.exe --release --no-translations --no-system-d3d-compiler --no-opengl-sw
+          # The install-qt-action sets QT_ROOT
+          $QT_BIN = "${env:QT_ROOT}\bin"
+          & "$QT_BIN\windeployqt.exe" build\Release\QTerm2.exe --release --no-translations --no-system-d3d-compiler --no-opengl-sw
           
       - name: Create ZIP
         run: |
