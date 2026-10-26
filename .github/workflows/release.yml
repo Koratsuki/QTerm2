@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
       - name: Install dependencies
         run: |
@@ -23,7 +25,8 @@ jobs:
             libxkbcommon-dev libssl-dev pkg-config \
             wget file libfuse2 fuse dpkg-dev rpm \
             libsqlite3-dev libssh2-1-dev \
-            libgl1-mesa-dev libglu1-mesa-dev desktop-file-utils
+            libgl1-mesa-dev libglu1-mesa-dev desktop-file-utils \
+            debhelper devscripts
           
       - name: Build
         run: |
@@ -47,16 +50,19 @@ jobs:
           
       - name: Build DEB/RPM
         run: |
+          VERSION=$(git describe --tags --abbrev=0 | sed 's/v//')
           # Prepare DEB
-          ls -R packaging/debian
           cp -r packaging/debian .
-          ls -R debian
+          # Update changelog
+          dch -v ${VERSION}-1 -M "Release ${VERSION}"
+          # Fix debhelper-compat to 12 if 13 fails
+          sed -i 's/debhelper-compat (= 13)/debhelper-compat (= 12)/' debian/control
           dpkg-buildpackage -us -uc -b
           mv ../*.deb .
           # RPM
           mkdir -p ~/rpmbuild/{SOURCES,SPECS}
-          tar czf ~/rpmbuild/SOURCES/qterm2-1.0.6.tar.gz --exclude=.git .
-          cp packaging/rpm/qterm2.spec ~/rpmbuild/SPECS/
+          tar czf ~/rpmbuild/SOURCES/qterm2-${VERSION}.tar.gz --exclude=.git .
+          sed "s/Version:.*/Version:        ${VERSION}/" packaging/rpm/qterm2.spec > ~/rpmbuild/SPECS/qterm2.spec
           rpmbuild -bb ~/rpmbuild/SPECS/qterm2.spec
           mv ~/rpmbuild/RPMS/*/*.rpm .
           
