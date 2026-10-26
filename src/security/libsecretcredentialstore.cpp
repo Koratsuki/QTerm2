@@ -27,36 +27,43 @@ const SecretSchema *credentialSchema()
 
 } // namespace
 
-LibSecretCredentialStore::LibSecretCredentialStore(QObject *parent)
-    : CredentialStore(parent)
-{
-}
+LibSecretCredentialStore::LibSecretCredentialStore() : CredentialStore() {}
+LibSecretCredentialStore::~LibSecretCredentialStore() = default;
 
-bool LibSecretCredentialStore::isAvailable() const
+bool LibSecretCredentialStore::isAvailable() const { return true; }
+QString LibSecretCredentialStore::availabilityHint() const { return QString(); }
+
+bool LibSecretCredentialStore::store(const CredentialKey &key, const QString &secret, QString *errorMessage)
 {
+    GError *error = nullptr;
+    const bool ok = secret_password_store_sync(credentialSchema(),
+                                               SECRET_COLLECTION_DEFAULT,
+                                               qPrintable(QStringLiteral("%1 (%2)").arg(key.service, key.account)),
+                                               secret.toUtf8().constData(),
+                                               nullptr,
+                                               &error,
+                                               "service", key.service.toUtf8().constData(),
+                                               "account", key.account.toUtf8().constData(),
+                                               nullptr);
+    if (!ok || error) {
+        if (errorMessage) *errorMessage = error ? QString::fromUtf8(error->message) : QStringLiteral("Unknown error");
+        if (error) g_error_free(error);
+        return false;
+    }
     return true;
 }
 
-QString LibSecretCredentialStore::backendName() const
-{
-    return QStringLiteral("Secret Service (libsecret)");
-}
-
-bool LibSecretCredentialStore::getSecret(const QString &service,
-                                         const QString &account,
-                                         QString &secret,
-                                         QString *errorMessage)
+bool LibSecretCredentialStore::lookup(const CredentialKey &key, QString &secret, QString *errorMessage) const
 {
     GError *error = nullptr;
     gchar *result = secret_password_lookup_sync(credentialSchema(),
                                                 nullptr,
                                                 &error,
-                                                "service", service.toUtf8().constData(),
-                                                "account", account.toUtf8().constData(),
+                                                "service", key.service.toUtf8().constData(),
+                                                "account", key.account.toUtf8().constData(),
                                                 nullptr);
     if (error) {
-        if (errorMessage)
-            *errorMessage = QString::fromUtf8(error->message);
+        if (errorMessage) *errorMessage = QString::fromUtf8(error->message);
         g_error_free(error);
         return false;
     }
@@ -69,47 +76,17 @@ bool LibSecretCredentialStore::getSecret(const QString &service,
     return true;
 }
 
-bool LibSecretCredentialStore::setSecret(const QString &service,
-                                         const QString &account,
-                                         const QString &secret,
-                                         QString *errorMessage)
-{
-    GError *error = nullptr;
-    const bool ok = secret_password_store_sync(credentialSchema(),
-                                               SECRET_COLLECTION_DEFAULT,
-                                               qPrintable(QStringLiteral("%1 (%2)").arg(service, account)),
-                                               secret.toUtf8().constData(),
-                                               nullptr,
-                                               &error,
-                                               "service", service.toUtf8().constData(),
-                                               "account", account.toUtf8().constData(),
-                                               nullptr);
-    if (!ok || error) {
-        if (errorMessage) {
-            *errorMessage = error ? QString::fromUtf8(error->message)
-                                  : QStringLiteral("Unknown error storing secret");
-        }
-        if (error)
-            g_error_free(error);
-        return false;
-    }
-    return true;
-}
-
-bool LibSecretCredentialStore::clearSecret(const QString &service,
-                                           const QString &account,
-                                           QString *errorMessage)
+bool LibSecretCredentialStore::remove(const CredentialKey &key, QString *errorMessage)
 {
     GError *error = nullptr;
     const bool ok = secret_password_clear_sync(credentialSchema(),
                                                 nullptr,
                                                 &error,
-                                                "service", service.toUtf8().constData(),
-                                                "account", account.toUtf8().constData(),
+                                                "service", key.service.toUtf8().constData(),
+                                                "account", key.account.toUtf8().constData(),
                                                 nullptr);
     if (error) {
-        if (errorMessage)
-            *errorMessage = QString::fromUtf8(error->message);
+        if (errorMessage) *errorMessage = QString::fromUtf8(error->message);
         g_error_free(error);
         return false;
     }
