@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=QTerm2
+GenericName=Terminal Emulator
+Comment=Terminal xterm-256color con gestor de sesiones SSH
+Exec=QTerm2
+Icon=QTerm2
+Terminal=false
+Categories=System;TerminalEmulator;Utility;
+Keywords=terminal;shell;ssh;console;xterm;
+StartupNotify=true
+StartupWMClass=QTerm2

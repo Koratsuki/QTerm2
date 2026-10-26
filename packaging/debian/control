@@ -1,0 +1,21 @@
+Source: qterm2
+Section: utils
+Priority: optional
+Maintainer: Your Name <your.email@example.com>
+Build-Depends: debhelper-compat (= 13),
+               cmake (>= 3.16),
+               ninja-build,
+               qt6-base-dev,
+               qt6-tools-dev,
+               libxkbcommon-dev,
+               libssl-dev,
+               pkg-config
+Standards-Version: 4.5.0
+
+Package: qterm2
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends},
+         openssh-client
+Description: Terminal emulator inspired by iTerm2
+ QTerm2 is a terminal emulator for Linux inspired by iTerm2, written in C++17 with Qt 6 Widgets.
+ Features include SSH session manager, tabs, splits, xterm-256color emulator, plugins, and more.

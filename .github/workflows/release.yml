@@ -1,0 +1,153 @@
+name: Build and Release QTerm2
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux-appimage:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build \
+            qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
+            libxkbcommon-dev libssl-dev pkg-config \
+            wget file
+          
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
+          cmake --build build -j$(nproc)
+          
+      - name: Create AppImage
+        run: |
+          wget -O linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20250213-2/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/scalable/apps
+          cp build/QTerm2 AppDir/usr/bin/
+          cp packaging/QTerm2.desktop AppDir/usr/share/applications/
+          cp packaging/QTerm2.svg AppDir/usr/share/icons/hicolor/scalable/apps/QTerm2.svg
+          ln -sf usr/share/applications/QTerm2.desktop AppDir/QTerm2.desktop
+          ln -sf usr/share/icons/hicolor/scalable/apps/QTerm2.svg AppDir/.DirIcon
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage
+          
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: QTerm2-AppImage
+          path: "*.AppImage"
+          
+  build-linux-deb:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build \
+            qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
+            libxkbcommon-dev libssl-dev pkg-config \
+            debhelper devscripts
+          
+      - name: Build .deb
+        run: |
+          mkdir -p packaging/debian/build
+          cp -r packaging/debian/* packaging/debian/build/ 2>/dev/null || true
+          cd packaging/debian/build && \
+          dpkg-buildpackage -us -uc -b || true
+          
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: QTerm2-DEB
+          path: "*.deb"
+          
+  build-linux-rpm:
+    runs-on: ubuntu-22.04
+    container:
+      image: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          dnf install -y \
+            cmake ninja-build gcc-c++ \
+            qt6-qtbase-devel qt6-qttools-devel \
+            libxkbcommon-devel openssl-devel \
+            rpm-build rpmdevtools
+          
+      - name: Build .rpm
+        run: |
+          rpmdev-setuptree
+          cp -r . /root/rpmbuild/SOURCES/qterm2-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/v//' || echo "1.0.0")/
+          cp packaging/rpm/qterm2.spec /root/rpmbuild/SPECS/
+          rpmbuild -bb /root/rpmbuild/SPECS/qterm2.spec || true
+          
+      - name: Upload .rpm
+        uses: actions/upload-artifact@v4
+        with:
+          name: QTerm2-RPM
+          path: ~/rpmbuild/RPMS/*/*.rpm
+          
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.6.0'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G "Visual Studio 17 2022" -A x64
+          cmake --build build --config Release -j %NUMBER_OF_PROCESSORS%
+          
+      - name: Deploy Qt
+        run: |
+          cd build\Release
+          windeployqt.exe QTerm2.exe --release --no-translations --no-system-d3d-compiler --no-opengl-sw
+          
+      - name: Create ZIP with all dependencies
+        run: |
+          Compress-Archive -Path build\Release\* -DestinationPath QTerm2-Windows-x64.zip
+          
+      - name: Upload Windows ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: QTerm2-Windows
+          path: QTerm2-Windows-x64.zip
+          
+  release:
+    needs: [build-linux-appimage, build-linux-deb, build-linux-rpm, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            QTerm2-AppImage/*.AppImage
+            QTerm2-DEB/*.deb
+            QTerm2-RPM/*/*.rpm
+            QTerm2-Windows/*.zip
+          draft: false
+          prerelease: false

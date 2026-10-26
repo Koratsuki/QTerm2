@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2d384a"/>
+      <stop offset="1" stop-color="#161c26"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="26" ry="26" fill="url(#bg)"/>
+  <text x="24" y="88" font-family="DejaVu Sans Mono, monospace" font-size="64"
+        font-weight="bold" fill="#7aa2f7">&gt;</text>
+  <text x="52" y="88" font-family="DejaVu Sans Mono, monospace" font-size="64"
+        font-weight="bold" fill="#5cd69a">_</text>
+</svg>

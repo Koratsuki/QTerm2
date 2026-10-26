@@ -1,0 +1,8 @@
+{
+    "IID": "org.qterm2.QTerm2Plugin/1.0",
+    "MetaData": {
+        "id": "org.qterm2.docker-k8s",
+        "name": "Docker/Kubernetes Integration",
+        "version": "1.0.0"
+    }
+}
