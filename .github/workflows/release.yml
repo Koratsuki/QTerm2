@@ -21,7 +21,7 @@ jobs:
             build-essential cmake ninja-build \
             qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
             libxkbcommon-dev libssl-dev pkg-config \
-            wget file
+            wget file libfuse2 fuse
           
       - name: Build
         run: |
@@ -30,7 +30,8 @@ jobs:
           
       - name: Create AppImage
         run: |
-          wget -O linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20250213-2/linuxdeploy-x86_64.AppImage
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20250213-2/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage
           mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/scalable/apps
           cp build/QTerm2 AppDir/usr/bin/
@@ -38,14 +39,14 @@ jobs:
           cp packaging/QTerm2.svg AppDir/usr/share/icons/hicolor/scalable/apps/QTerm2.svg
           ln -sf usr/share/applications/QTerm2.desktop AppDir/QTerm2.desktop
           ln -sf usr/share/icons/hicolor/scalable/apps/QTerm2.svg AppDir/.DirIcon
-          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage || ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
           
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
           name: QTerm2-AppImage
           path: "*.AppImage"
-          
+
   build-linux-deb:
     runs-on: ubuntu-22.04
     steps:
@@ -58,21 +59,19 @@ jobs:
             build-essential cmake ninja-build \
             qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
             libxkbcommon-dev libssl-dev pkg-config \
-            debhelper devscripts
+            debhelper devscripts fakeroot
           
       - name: Build .deb
         run: |
-          mkdir -p packaging/debian/build
-          cp -r packaging/debian/* packaging/debian/build/ 2>/dev/null || true
-          cd packaging/debian/build && \
           dpkg-buildpackage -us -uc -b || true
+          mv ../*.deb . 2>/dev/null || true
           
       - name: Upload .deb
         uses: actions/upload-artifact@v4
         with:
           name: QTerm2-DEB
           path: "*.deb"
-          
+
   build-linux-rpm:
     runs-on: ubuntu-22.04
     container:
@@ -83,7 +82,7 @@ jobs:
       - name: Install dependencies
         run: |
           dnf install -y \
-            cmake ninja-build gcc-c++ \
+            cmake ninja-build gcc-c++ git \
             qt6-qtbase-devel qt6-qttools-devel \
             libxkbcommon-devel openssl-devel \
             rpm-build rpmdevtools
@@ -91,16 +90,19 @@ jobs:
       - name: Build .rpm
         run: |
           rpmdev-setuptree
-          cp -r . /root/rpmbuild/SOURCES/qterm2-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/v//' || echo "1.0.0")/
-          cp packaging/rpm/qterm2.spec /root/rpmbuild/SPECS/
-          rpmbuild -bb /root/rpmbuild/SPECS/qterm2.spec || true
+          VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/v//' || echo "1.0.0")
+          mkdir -p ~/rpmbuild/SOURCES/qterm2-${VERSION}
+          cp -r . ~/rpmbuild/SOURCES/qterm2-${VERSION}/
+          tar czf ~/rpmbuild/SOURCES/qterm2-${VERSION}.tar.gz -C ~/rpmbuild/SOURCES qterm2-${VERSION}
+          sed "s/Version:.*/Version:        ${VERSION}/" packaging/rpm/qterm2.spec > ~/rpmbuild/SPECS/qterm2.spec
+          rpmbuild -bb ~/rpmbuild/SPECS/qterm2.spec || true
           
       - name: Upload .rpm
         uses: actions/upload-artifact@v4
         with:
           name: QTerm2-RPM
           path: ~/rpmbuild/RPMS/*/*.rpm
-          
+
   build-windows:
     runs-on: windows-latest
     steps:
@@ -117,7 +119,7 @@ jobs:
       - name: Build
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G "Visual Studio 17 2022" -A x64
-          cmake --build build --config Release -j %NUMBER_OF_PROCESSORS%
+          cmake --build build --config Release -j $env:NUMBER_OF_PROCESSORS
           
       - name: Deploy Qt
         run: |
@@ -133,13 +135,15 @@ jobs:
         with:
           name: QTerm2-Windows
           path: QTerm2-Windows-x64.zip
-          
+
   release:
     needs: [build-linux-appimage, build-linux-deb, build-linux-rpm, build-windows]
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: true
         
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -148,6 +152,7 @@ jobs:
             QTerm2-AppImage/*.AppImage
             QTerm2-DEB/*.deb
             QTerm2-RPM/*/*.rpm
+            QTerm2-RPM/*/*/*.rpm
             QTerm2-Windows/*.zip
           draft: false
           prerelease: false
