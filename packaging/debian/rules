@@ -3,9 +3,4 @@
 	dh $@ --buildsystem=cmake --builddirectory=build
 
 override_dh_auto_configure:
-	dh_auto_configure -- -DCMAKE_BUILD_TYPE=Release -G Ninja
-
-override_dh_install:
-	dh_install
-	install -D -m 644 packaging/QTerm2.desktop debian/qterm2/usr/share/applications/QTerm2.desktop
-	install -D -m 644 packaging/QTerm2.svg debian/qterm2/usr/share/icons/hicolor/scalable/apps/QTerm2.svg
+	dh_auto_configure -- -DCMAKE_BUILD_TYPE=Release

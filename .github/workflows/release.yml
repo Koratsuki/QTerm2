@@ -54,9 +54,11 @@ jobs:
           # Prepare DEB
           cp -r packaging/debian .
           # Update changelog
-          dch -v ${VERSION}-1 -M "Release ${VERSION}"
-          # Fix debhelper-compat to 12 if 13 fails
-          sed -i 's/debhelper-compat (= 13)/debhelper-compat (= 12)/' debian/control
+          EMAIL="koratsuki.nijuusan@gmail.com" dch -v ${VERSION}-1 --create --package qterm2 "Release ${VERSION}"
+          # Fix debhelper-compat to 13
+          sed -i 's/debhelper-compat (= 13)/debhelper-compat (= 12)/' debian/control || true
+          # Run build without Ninja for DEB (to avoid generator mismatch with dh_auto_build)
+          rm -rf build # Clear previous Ninja build
           dpkg-buildpackage -us -uc -b
           mv ../*.deb .
           # RPM
