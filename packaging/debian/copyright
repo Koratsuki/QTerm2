@@ -1,8 +1,8 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: qterm2
-Upstream-Contact: Your Name <your.email@example.com>
-Source: https://github.com/yourusername/QTerm2
+Upstream-Contact: Leslie León <koratsuki.nijuusan@example.com>
+Source: https://github.com/Koratsuki/QTerm2
 
 Files: *
-Copyright: 2026 Your Name
+Copyright: 2026 Leslie León
 License: MIT

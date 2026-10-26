@@ -2,7 +2,7 @@
 set -e
 
 APP=QTerm2
-VERSION=1.0.0
+VERSION=1.0.5
 BUILD_DIR=../../build
 APPDIR=AppDir
 

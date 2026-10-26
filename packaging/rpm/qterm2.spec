@@ -1,10 +1,10 @@
 Name:           qterm2
-Version:        1.0.0
+Version:        1.0.5
 Release:        1%{?dist}
 Summary:        Terminal emulator inspired by iTerm2
 
 License:        MIT
-URL:            https://github.com/yourusername/QTerm2
+URL:            https://github.com/Koratsuki/QTerm2
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  cmake >= 3.16
