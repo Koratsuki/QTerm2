@@ -63,7 +63,6 @@ jobs:
           tar czf ~/rpmbuild/SOURCES/qterm2-${VERSION}.tar.gz --exclude=.git .
           sed "s/Version:.*/Version:        ${VERSION}/" packaging/rpm/qterm2.spec > ~/rpmbuild/SPECS/qterm2.spec
           sed -i "s/Source0:.*/Source0:        qterm2-${VERSION}.tar.gz/" ~/rpmbuild/SPECS/qterm2.spec
-          # Use --nodeps because we are on Ubuntu and don't have RPM-named dev packages
           rpmbuild -bb --nodeps ~/rpmbuild/SPECS/qterm2.spec
           mv ~/rpmbuild/RPMS/*/*.rpm .
           
@@ -91,12 +90,11 @@ jobs:
           
       - name: Build
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G "Visual Studio 17 2022" -A x64
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release -j $env:NUMBER_OF_PROCESSORS
           
       - name: Deploy Qt
         run: |
-          # The install-qt-action sets QT_ROOT
           $QT_BIN = "${env:QT_ROOT}\bin"
           & "$QT_BIN\windeployqt.exe" build\Release\QTerm2.exe --release --no-translations --no-system-d3d-compiler --no-opengl-sw
           
@@ -116,7 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/upload-artifact@v4
         continue-on-error: true
         
       - name: Create Release
