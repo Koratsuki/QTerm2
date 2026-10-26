@@ -48,7 +48,9 @@ jobs:
       - name: Build DEB/RPM
         run: |
           # Prepare DEB
+          ls -R packaging/debian
           cp -r packaging/debian .
+          ls -R debian
           dpkg-buildpackage -us -uc -b
           mv ../*.deb .
           # RPM
