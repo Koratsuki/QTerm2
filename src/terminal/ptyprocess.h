@@ -57,7 +57,16 @@ private:
     void closePty();
     void reapChild();
 
+#ifdef _WIN32
+    HANDLE m_hProcess = nullptr;
+    HANDLE m_hPipeRead = nullptr;
+    HANDLE m_hPipeWrite = nullptr;
+    int m_fd = -1;
+    pid_t m_pid = 0;
+    QSocketNotifier *m_notifier = nullptr;
+#else
     int m_fd = -1;
     pid_t m_pid = -1;
     QSocketNotifier *m_notifier = nullptr;
+#endif
 };
