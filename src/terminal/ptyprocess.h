@@ -6,6 +6,15 @@
 #include <QProcessEnvironment>
 #include <QByteArray>
 
+#ifdef _WIN32
+#include <windows.h>
+#ifndef pid_t
+typedef DWORD pid_t;
+#endif
+#else
+#include <sys/types.h>
+#endif
+
 class QSocketNotifier;
 
 /**
