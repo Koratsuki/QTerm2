@@ -8,9 +8,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#ifndef pid_t
-typedef DWORD pid_t;
-#endif
+typedef unsigned long pid_t;
 #else
 #include <sys/types.h>
 #endif
