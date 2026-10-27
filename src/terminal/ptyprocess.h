@@ -63,10 +63,9 @@ private:
     HANDLE m_hPipeWrite = nullptr;
     int m_fd = -1;
     pid_t m_pid = 0;
-    QSocketNotifier *m_notifier = nullptr;
 #else
     int m_fd = -1;
     pid_t m_pid = -1;
-    QSocketNotifier *m_notifier = nullptr;
 #endif
+    QSocketNotifier *m_notifier = nullptr;
 };
