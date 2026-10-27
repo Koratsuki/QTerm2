@@ -6,13 +6,6 @@
 #include <QProcessEnvironment>
 #include <QByteArray>
 
-#ifdef Q_OS_WIN
-#include <windows.h>
-typedef DWORD pid_t;
-#else
-#include <sys/types.h>
-#endif
-
 class QSocketNotifier;
 
 /**
@@ -40,21 +33,9 @@ public:
     void resize(int cols, int rows);
     void terminateProcess();
 
-    bool isRunning() const {
-#ifndef _WIN32
-        return m_fd >= 0;
-#else
-        return m_hProcess != nullptr;
-#endif
-    }
-    qint64 pid() const { return static_cast<qint64>(m_pid); }
-    bool isForegroundProcess() const {
-#ifndef _WIN32
-        return m_fd >= 0;
-#else
-        return m_hProcess != nullptr;
-#endif
-    }
+    bool isRunning() const { return m_fd >= 0; }
+    qint64 pid() const { return m_pid; }
+    bool isForegroundProcess() const { return m_fd >= 0; }
 
 signals:
     void dataReceived(const QByteArray &data);
@@ -67,15 +48,7 @@ private:
     void closePty();
     void reapChild();
 
-#ifndef _WIN32
     int m_fd = -1;
     pid_t m_pid = -1;
     QSocketNotifier *m_notifier = nullptr;
-#else
-    HANDLE m_hProcess = nullptr;
-    HANDLE m_hPipeRead = nullptr;
-    HANDLE m_hPipeWrite = nullptr;
-    pid_t m_pid = 0;
-    QSocketNotifier *m_notifier = nullptr;
-#endif
 };
