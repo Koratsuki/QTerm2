@@ -11,8 +11,20 @@ namespace qterm2::sessions {
 
 ProcessSpec SessionLauncher::specFor(const Session &session)
 {
-    if (!session.isLocal())
+    if (session.type == Session::Type::Ssh)
         return ssh::buildConnectSpec(session);
+
+    if (session.type == Session::Type::Telnet) {
+        ProcessSpec spec;
+        spec.program = QStringLiteral("telnet");
+        if (!session.host.isEmpty())
+            spec.args << session.host;
+        if (session.port != 23 && session.port > 0)
+            spec.args << QString::number(session.port);
+        spec.ok = !session.host.isEmpty();
+        if (!spec.ok) spec.error = QObject::tr("Falta el host para la conexión Telnet.");
+        return spec;
+    }
 
     ProcessSpec spec;
     QString shell = expandHome(session.shell);

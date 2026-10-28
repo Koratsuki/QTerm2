@@ -161,6 +161,11 @@ public:
         m_theme->setCurrentIndex(dark ? 0 : 1);
         form->addRow(tr("Tema"), m_theme);
 
+        m_lang = new QComboBox(this);
+        m_lang->addItem(QStringLiteral("Español"), QStringLiteral("es"));
+        m_lang->addItem(QStringLiteral("English"), QStringLiteral("en"));
+        form->addRow(tr("Idioma / Language"), m_lang);
+
         layout->addLayout(form);
 
         auto *hint = new QLabel(tr("Los cambios se aplican a todas las terminales abiertas. "
@@ -191,6 +196,7 @@ public:
     bool blink() const { return m_blink->isChecked(); }
     QString shell() const { return m_shell->text().trimmed(); }
     bool darkTheme() const { return m_theme->currentData().toBool(); }
+    QString language() const { return m_lang->currentData().toString(); }
 
 private:
     QFontComboBox *m_font = nullptr;
@@ -200,6 +206,7 @@ private:
     QCheckBox *m_blink = nullptr;
     QLineEdit *m_shell = nullptr;
     QComboBox *m_theme = nullptr;
+    QComboBox *m_lang = nullptr;
 };
 
 } // namespace

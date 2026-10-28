@@ -256,6 +256,7 @@ void SessionDialog::buildGeneralTab()
 
     m_type = new QComboBox(page);
     m_type->addItem(tr("Servidor SSH"), QStringLiteral("ssh"));
+    m_type->addItem(tr("Telnet"), QStringLiteral("telnet"));
     m_type->addItem(tr("Terminal local"), QStringLiteral("local"));
     form->addRow(tr("Tipo"), m_type);
 
@@ -798,11 +799,15 @@ void SessionDialog::load(const Session &session)
 
 void SessionDialog::updateVisibility()
 {
-    const bool ssh = m_type->currentData().toString() == QStringLiteral("ssh");
+    const QString typeStr = m_type->currentData().toString();
+    const bool ssh = typeStr == QStringLiteral("ssh");
+    const bool telnet = typeStr == QStringLiteral("telnet");
+    const bool remote = ssh || telnet;
+
     if (m_sshBox)
-        m_sshBox->setVisible(ssh);
+        m_sshBox->setVisible(remote);
     if (m_localBox)
-        m_localBox->setVisible(!ssh);
+        m_localBox->setVisible(!remote);
     if (m_tabs->count() > 1)
         m_tabs->setTabVisible(1, ssh);
     if (m_tabs->count() > 2)
@@ -1031,12 +1036,18 @@ bool SessionDialog::validate()
         s.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     s.name = name;
     s.group = m_group->currentText().trimmed();
-    if (s.group.isEmpty())
-        s.group = ssh ? QStringLiteral("Servidores") : QStringLiteral("Locales");
-    s.type = ssh ? Session::Type::Ssh : Session::Type::Local;
+    const QString typeStr = m_type->currentData().toString();
+    const bool isTelnet = typeStr == QStringLiteral("telnet");
+
+    s.type = ssh ? Session::Type::Ssh 
+           : isTelnet ? Session::Type::Telnet 
+           : Session::Type::Local;
     s.host = m_host->text().trimmed();
     s.port = m_port->value();
     s.user = m_user->text().trimmed();
+    
+    if (s.group.isEmpty())
+        s.group = (ssh || isTelnet) ? QStringLiteral("Servidores") : QStringLiteral("Locales");
 
     const QString auth = m_auth->currentData().toString();
     s.auth = auth == QStringLiteral("agent") ? Session::Auth::Agent

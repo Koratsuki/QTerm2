@@ -27,17 +27,22 @@ public:
 
         m_header = new QWidget(this);
         m_header->setObjectName(QStringLiteral("PaneHeader"));
+        m_header->setStyleSheet(QStringLiteral("QWidget#PaneHeader { background: palette(alternate-base); border-bottom: 1px solid palette(mid); }"));
         auto *headerLayout = new QHBoxLayout(m_header);
-        headerLayout->setContentsMargins(6, 2, 6, 2);
+        headerLayout->setContentsMargins(8, 2, 8, 2);
         headerLayout->setSpacing(4);
 
         m_titleLabel = new QLabel(this);
+        QFont f = m_titleLabel->font();
+        f.setPointSize(9);
+        m_titleLabel->setFont(f);
         headerLayout->addWidget(m_titleLabel, 1);
 
         m_closeButton = new QToolButton(this);
-        m_closeButton->setText(QStringLiteral("\u2715"));
-        m_closeButton->setToolTip(tr("Cerrar panel"));
-        m_closeButton->setFixedSize(18, 18);
+        m_closeButton->setText(QStringLiteral("✕"));
+        m_closeButton->setToolTip(tr("Cerrar panel dividido"));
+        m_closeButton->setFixedSize(20, 20);
+        m_closeButton->setStyleSheet(QStringLiteral("QToolButton { border: none; border-radius: 3px; font-weight: bold; color: palette(window-text); } QToolButton:hover { background: palette(highlight); color: palette(highlighted-text); }"));
         headerLayout->addWidget(m_closeButton);
 
         layout->addWidget(m_header);
