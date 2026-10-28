@@ -51,6 +51,7 @@ bool ApplicationContext::initialize(QString *errorMessage)
     }
 
     m_repository = std::make_unique<SqliteSessionRepository>(m_database.get());
+    m_repository->clearRecentSessions();
 
     const Status migration =
         importLegacyData(m_paths, *m_repository, *m_settings);

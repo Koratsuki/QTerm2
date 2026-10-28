@@ -11,6 +11,56 @@
 #include <QScrollBar>
 #include <QSplitter>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QToolButton>
+#include <QLabel>
+
+class PaneWrapper : public QWidget
+{
+public:
+    PaneWrapper(TerminalWidget *term, std::function<void()> onClose, QWidget *parent = nullptr)
+        : QWidget(parent)
+    {
+        auto *layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(0);
+
+        m_header = new QWidget(this);
+        m_header->setObjectName(QStringLiteral("PaneHeader"));
+        auto *headerLayout = new QHBoxLayout(m_header);
+        headerLayout->setContentsMargins(6, 2, 6, 2);
+        headerLayout->setSpacing(4);
+
+        m_titleLabel = new QLabel(this);
+        headerLayout->addWidget(m_titleLabel, 1);
+
+        m_closeButton = new QToolButton(this);
+        m_closeButton->setText(QStringLiteral("\u2715"));
+        m_closeButton->setToolTip(tr("Cerrar panel"));
+        m_closeButton->setFixedSize(18, 18);
+        headerLayout->addWidget(m_closeButton);
+
+        layout->addWidget(m_header);
+        layout->addWidget(term, 1);
+
+        QObject::connect(m_closeButton, &QToolButton::clicked, this, [onClose]() {
+            onClose();
+        });
+    }
+
+    void setHeaderVisible(bool visible) {
+        m_header->setVisible(visible);
+    }
+
+    void setTitle(const QString &title) {
+        m_titleLabel->setText(title);
+    }
+
+private:
+    QWidget *m_header = nullptr;
+    QLabel *m_titleLabel = nullptr;
+    QToolButton *m_closeButton = nullptr;
+};
 
 TerminalPane::TerminalPane(const Session &session, QWidget *parent)
     : QWidget(parent)
@@ -50,16 +100,36 @@ void TerminalPane::attachTerminal(TerminalWidget *terminal)
 {
     m_terminals.append(terminal);
 
-    connect(terminal, &TerminalWidget::titleChanged, this, [this] {
+    auto *wrapper = new PaneWrapper(terminal, [this, terminal]() {
+        removeTerminal(terminal);
+    }, this);
+    wrapper->setTitle(m_session.name);
+    m_wrappers.insert(terminal, wrapper);
+    wrapper->show();
+
+    connect(terminal, &TerminalWidget::titleChanged, this, [this, wrapper, terminal] {
+        wrapper->setTitle(terminal->title().isEmpty() ? m_session.name : terminal->title());
         emit titleChanged();
     });
     connect(terminal, &TerminalWidget::terminalFinished, this, [this, terminal] {
+        // If the shell exits, close this pane/tab
+        if (m_terminals.contains(terminal)) {
+            // If there are multiple panes in this tab, close just this pane
+            if (m_terminals.size() > 1) {
+                removeTerminal(terminal);
+                return;
+            }
+            // Last pane in this tab - close the tab
+            emit lastPaneClosed();
+            return;
+        }
         emit terminalFinished(terminal);
     });
     connect(terminal, &TerminalWidget::bellRang, this, [this, terminal] {
         emit bellRang(terminal);
     });
     terminal->installEventFilter(this);
+    updateHeaders();
 }
 
 bool TerminalPane::launch(TerminalWidget *terminal, const Session &session,
@@ -99,7 +169,7 @@ bool TerminalPane::start(QString *errorMessage)
     }
 
     attachTerminal(term);
-    m_root->addWidget(term);
+    m_root->addWidget(m_wrappers[term]);
     term->show();
     setActive(term);
     term->setFocus(Qt::OtherFocusReason);
@@ -120,7 +190,7 @@ bool TerminalPane::startCommand(const QString &program, const QStringList &args,
         return false;
     }
     attachTerminal(term);
-    m_root->addWidget(term);
+    m_root->addWidget(m_wrappers[term]);
     term->show();
     setActive(term);
     term->setFocus(Qt::OtherFocusReason);
@@ -169,15 +239,17 @@ void TerminalPane::activateTerminal(TerminalWidget *terminal)
 void TerminalPane::commitSplit(TerminalWidget *terminal, Qt::Orientation orientation)
 {
     TerminalWidget *current = activeTerminal();
+    QWidget *widgetToInsert = m_wrappers[terminal];
     if (!current) {
-        m_root->addWidget(terminal);
+        m_root->addWidget(widgetToInsert);
         return;
     }
 
-    QSplitter *parent = qobject_cast<QSplitter *>(current->parentWidget());
+    QWidget *currentWrapper = m_wrappers[current];
+    QSplitter *parent = qobject_cast<QSplitter *>(currentWrapper->parentWidget());
     if (parent && parent->orientation() == orientation) {
-        const int index = parent->indexOf(current);
-        parent->insertWidget(index + 1, terminal);
+        const int index = parent->indexOf(currentWrapper);
+        parent->insertWidget(index + 1, widgetToInsert);
         const int count = parent->count();
         QList<int> sizes;
         for (int i = 0; i < count; ++i)
@@ -188,15 +260,16 @@ void TerminalPane::commitSplit(TerminalWidget *terminal, Qt::Orientation orienta
         nested->setChildrenCollapsible(false);
         nested->setHandleWidth(1);
         nested->setOpaqueResize(true);
-        const int index = parent->indexOf(current);
-        nested->addWidget(current);
-        nested->addWidget(terminal);
+        const int index = parent->indexOf(currentWrapper);
+        nested->addWidget(currentWrapper);
+        nested->addWidget(widgetToInsert);
         parent->insertWidget(index, nested);
         nested->setSizes({ 1, 1 });
     } else {
-        m_root->addWidget(terminal);
+        m_root->addWidget(widgetToInsert);
     }
-    terminal->show();
+    widgetToInsert->show();
+    updateHeaders();
 }
 
 bool TerminalPane::prepareSplit(QString *errorMessage)
@@ -229,14 +302,24 @@ bool TerminalPane::split(Qt::Orientation orientation, QString *errorMessage)
     return true;
 }
 
+void TerminalPane::updateHeaders()
+{
+    const bool showHeaders = m_terminals.size() > 1;
+    for (auto *wrapper : m_wrappers.values()) {
+        wrapper->setHeaderVisible(showHeaders);
+    }
+}
+
 void TerminalPane::removeTerminal(TerminalWidget *terminal)
 {
     if (!terminal)
         return;
 
     m_terminals.removeAll(terminal);
-    QSplitter *parent = qobject_cast<QSplitter *>(terminal->parentWidget());
-    terminal->setParent(nullptr);
+    PaneWrapper *wrapper = m_wrappers.take(terminal);
+    QSplitter *parent = qobject_cast<QSplitter *>(wrapper->parentWidget());
+    wrapper->setParent(nullptr);
+    wrapper->deleteLater();
     terminal->deleteLater();
 
     // Collapse splitters that now contain a single pane, and prune empty ones.
@@ -256,6 +339,8 @@ void TerminalPane::removeTerminal(TerminalWidget *terminal)
     }
     if (parent && parent->count() == 0 && parent != m_root)
         parent->deleteLater();
+
+    updateHeaders();
 
     if (m_terminals.isEmpty()) {
         m_active = nullptr;

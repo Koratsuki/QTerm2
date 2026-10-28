@@ -293,7 +293,7 @@ bool PtyProcess::startShell(const QString &shell, int cols, int rows, const QStr
     QString sh = shell.trimmed();
     if (sh.isEmpty()) {
         const QByteArray envShell = ::getenv("SHELL");
-        if (envShell && envShell[0])
+        if (!envShell.isEmpty())
             sh = QString::fromLocal8Bit(envShell);
         else
             sh = QStringLiteral("/bin/bash");

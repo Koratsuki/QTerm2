@@ -341,6 +341,23 @@ bool SqliteSessionRepository::markUsed(const QString &id, const QDateTime &when,
     return true;
 }
 
+bool SqliteSessionRepository::clearRecentSessions(QString *errorMessage)
+{
+    if (!m_database || !m_database->isOpen()) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("La base de datos no está abierta.");
+        return false;
+    }
+    QSqlQuery query(m_database->handle());
+    query.prepare(QStringLiteral("UPDATE sessions SET last_used_at = NULL"));
+    if (!query.exec()) {
+        if (errorMessage)
+            *errorMessage = queryError(query);
+        return false;
+    }
+    return true;
+}
+
 int SqliteSessionRepository::count(QString *errorMessage) const
 {
     if (!m_database || !m_database->isOpen()) {

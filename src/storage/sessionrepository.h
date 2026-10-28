@@ -25,6 +25,7 @@ public:
     virtual bool remove(const QString &id, QString *errorMessage = nullptr) = 0;
     virtual bool markUsed(const QString &id, const QDateTime &when,
                           QString *errorMessage = nullptr) = 0;
+    virtual bool clearRecentSessions(QString *errorMessage = nullptr) = 0;
     virtual int count(QString *errorMessage = nullptr) const = 0;
 };
 

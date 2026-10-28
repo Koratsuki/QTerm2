@@ -1297,6 +1297,7 @@ void MainWindow::deleteSession(const QString &id)
                              m_store->lastError());
         return;
     }
+    // Clear from recents
     statusBar()->showMessage(tr("Sesión eliminada"), 2000);
 }
 

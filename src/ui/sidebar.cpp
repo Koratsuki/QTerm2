@@ -7,6 +7,7 @@ using qterm2::SessionStore;
 #include "ui/theme.h"
 
 #include <QApplication>
+#include <QDateTime>
 #include <QFont>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -430,6 +431,7 @@ void Sidebar::showContextMenu(const QPoint &pos)
     if (!m_store || !m_store->contains(id))
         return;
     const Session s = m_store->sessionById(id);
+    const QString groupName = item->parent() ? item->parent()->text(0).split("  ·").first() : QString();
 
     QMenu menu(this);
     QAction *connectAction = menu.addAction(tr("Conectar"));
@@ -444,6 +446,25 @@ void Sidebar::showContextMenu(const QPoint &pos)
         keyAction = menu.addAction(tr("Instalar llave pública en el servidor…"));
         copyCommandAction = menu.addAction(tr("Copiar comando SSH"));
         menu.addSeparator();
+    }
+    if (groupName == tr("Recientes") || groupName == QStringLiteral("Recientes")) {
+        QAction *removeFromRecent = menu.addAction(tr("Quitar de recientes"));
+        QAction *chosen2 = menu.exec(m_tree->viewport()->mapToGlobal(pos));
+        if (!chosen2)
+            return;
+        if (chosen2 == connectAction)        emit connectRequested(id);
+        else if (chosen2 == editAction)      emit editRequested(id);
+        else if (chosen2 == favoriteAction)  emit favoriteToggleRequested(id);
+        else if (chosen2 == duplicateAction) emit duplicateRequested(id);
+        else if (chosen2 == keyAction)       emit installKeyRequested(id);
+        else if (chosen2 == copyCommandAction) emit copyCommandRequested(id);
+        else if (chosen2 == removeFromRecent && m_store) {
+            Session sess = m_store->sessionById(id);
+            sess.lastUsedAt = QDateTime();
+            m_store->updateSession(sess);
+            return;
+        }
+        return;
     }
     QAction *deleteAction = menu.addAction(tr("Eliminar…"));
 

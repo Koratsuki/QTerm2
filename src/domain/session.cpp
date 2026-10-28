@@ -191,7 +191,9 @@ QJsonObject Session::toJson() const
     obj[QStringLiteral("id")] = id;
     obj[QStringLiteral("name")] = name;
     obj[QStringLiteral("group")] = group;
-    obj[QStringLiteral("type")] = type == Type::Ssh ? QStringLiteral("ssh") : QStringLiteral("local");
+    obj[QStringLiteral("type")] = type == Type::Ssh ? QStringLiteral("ssh")
+                                 : type == Type::Telnet ? QStringLiteral("telnet")
+                                                        : QStringLiteral("local");
     obj[QStringLiteral("host")] = host;
     obj[QStringLiteral("port")] = port;
     obj[QStringLiteral("user")] = user;
@@ -236,8 +238,10 @@ Session Session::fromJson(const QJsonObject &obj)
         s.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     s.name = obj.value(QStringLiteral("name")).toString();
     s.group = obj.value(QStringLiteral("group")).toString(QStringLiteral("Servidores"));
-    s.type = obj.value(QStringLiteral("type")).toString() == QStringLiteral("local")
-                 ? Type::Local : Type::Ssh;
+    const QString typeStr = obj.value(QStringLiteral("type")).toString();
+    s.type = typeStr == QStringLiteral("local") ? Type::Local
+           : typeStr == QStringLiteral("telnet") ? Type::Telnet
+                                                : Type::Ssh;
     s.host = obj.value(QStringLiteral("host")).toString();
     s.port = obj.value(QStringLiteral("port")).toInt(22);
     s.user = obj.value(QStringLiteral("user")).toString();
@@ -323,7 +327,12 @@ QString Session::authName(Auth auth)
 
 QString Session::typeName(Type type)
 {
-    return type == Type::Ssh ? QStringLiteral("SSH") : QStringLiteral("Local");
+    switch (type) {
+    case Type::Local: return QStringLiteral("Local");
+    case Type::Ssh:   return QStringLiteral("SSH");
+    case Type::Telnet: return QStringLiteral("Telnet");
+    }
+    return QStringLiteral("SSH");
 }
 
 QString Session::hostKeyPolicyName(HostKeyPolicy policy)

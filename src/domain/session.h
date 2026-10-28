@@ -63,7 +63,7 @@ struct TerminalProfile
  */
 struct Session
 {
-    enum class Type { Local, Ssh };
+    enum class Type { Local, Ssh, Telnet };
     enum class Auth { PublicKey, Agent, Password };
 
     /** How OpenSSH should treat an unknown host key. */

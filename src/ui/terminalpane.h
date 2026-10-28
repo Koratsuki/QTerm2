@@ -2,12 +2,14 @@
 
 #include <QWidget>
 #include <QList>
+#include <QMap>
 
 #include "domain/session.h"
 #include "ui/theme.h"
 
 class QSplitter;
 class TerminalWidget;
+class PaneWrapper;
 
 /**
  * One tab. Contains one or more terminal panes arranged in a binary split
@@ -66,10 +68,12 @@ private:
     void removeTerminal(TerminalWidget *terminal);
     void collapseEmptySplitters();
     void setActive(TerminalWidget *terminal);
+    void updateHeaders();
 
     Session m_session;
     QSplitter *m_root = nullptr;
     QList<TerminalWidget *> m_terminals;
+    QMap<TerminalWidget *, PaneWrapper *> m_wrappers;
     TerminalWidget *m_active = nullptr;
 
     Theme::TerminalColors m_colors = Theme::TerminalColors::dark();

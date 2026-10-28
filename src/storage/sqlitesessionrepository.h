@@ -15,6 +15,7 @@ public:
     bool remove(const QString &id, QString *errorMessage = nullptr) override;
     bool markUsed(const QString &id, const QDateTime &when,
                   QString *errorMessage = nullptr) override;
+    bool clearRecentSessions(QString *errorMessage = nullptr) override;
     int count(QString *errorMessage = nullptr) const override;
 
 private:

@@ -20,6 +20,8 @@ struct TerminalColors
 
     static TerminalColors dark();
     static TerminalColors light();
+    static TerminalColors whiteOnBlack();
+    static TerminalColors greenOnBlack();
     static TerminalColors forMode(Mode mode);
 };
 
