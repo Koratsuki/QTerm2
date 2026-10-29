@@ -41,16 +41,17 @@ jobs:
           windeployqt.exe --release --no-translations --no-system-d3d-compiler --no-opengl-sw build\QTerm2.exe
           
       - name: Create ZIP
-        shell: cmd
+        shell: pwsh
         run: |
-          mkdir staging
-          copy /y build\QTerm2.exe staging\
-          xcopy /y /q build\*.dll staging\
-          xcopy /E /I /y build\iconengines staging\iconengines 2>nul || exit 0
-          xcopy /E /I /y build\imageformats staging\imageformats 2>nul || exit 0
-          xcopy /E /I /y build\platforms staging\platforms 2>nul || exit 0
-          xcopy /E /I /y build\styles staging\styles 2>nul || exit 0
-          Compress-Archive -Path staging\* -DestinationPath QTerm2-Windows-x64.zip
+          New-Item -ItemType Directory -Force -Path staging | Out-Null
+          Copy-Item build\QTerm2.exe staging\
+          if (Test-Path build\*.dll) { Copy-Item build\*.dll staging\ -Force }
+          if (Test-Path build\iconengines) { Copy-Item build\iconengines staging\iconengines -Recurse -Force }
+          if (Test-Path build\imageformats) { Copy-Item build\imageformats staging\imageformats -Recurse -Force }
+          if (Test-Path build\platforms) { Copy-Item build\platforms staging\platforms -Recurse -Force }
+          if (Test-Path build\styles) { Copy-Item build\styles staging\styles -Recurse -Force }
+          if (Test-Path build\translations) { Copy-Item build\translations staging\translations -Recurse -Force }
+          Compress-Archive -Path staging\* -DestinationPath QTerm2-Windows-x64.zip -Force
           
       - name: Upload Windows ZIP & Release
         uses: softprops/action-gh-release@v1
