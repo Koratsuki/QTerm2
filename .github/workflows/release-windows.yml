@@ -16,12 +16,12 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Install Qt
-        uses: jurplel/install-qt-action@v3
+        uses: jurplel/install-qt-action@v4
         with:
-          version: '6.7.3'
+          version: '6.6.3'
           host: 'windows'
           target: 'desktop'
-          arch: 'win64_msvc2022_64'
+          arch: 'win64_msvc2019_64'
           
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
