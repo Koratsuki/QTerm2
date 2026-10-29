@@ -78,19 +78,27 @@ int main(int argc, char *argv[])
         QString lang = QLocale::system().name().left(2);
         if (context.settings())
             lang = context.settings()->value(QStringLiteral("ui/language"), lang).toString();
-        if (lang == QStringLiteral("en")) {
-            static QTranslator translator;
-            const QString qm = QStringLiteral(":/translations/qterm2_en.qm");
-            if (QFile::exists(qm)) {
-                translator.load(qm);
-                app.installTranslator(&translator);
-            } else {
-                const QString qm2 = QCoreApplication::applicationDirPath() + QStringLiteral("/../share/qterm2/translations/qterm2_en.qm");
-                const QString qm3 = QStringLiteral("translations/qterm2_en.qm");
-                if (QFile::exists(qm2) && translator.load(qm2)) app.installTranslator(&translator);
-                else if (QFile::exists(qm3) && translator.load(qm3)) app.installTranslator(&translator);
+        static QTranslator translator;
+        bool loaded = false;
+        if (lang == QStringLiteral("en") || lang.startsWith(QStringLiteral("en"))) {
+            // Try resource paths
+            if (translator.load(QStringLiteral(":/translations/qterm2_en.qm"))) loaded = true;
+            else if (translator.load(QStringLiteral(":/qterm2_en.qm"))) loaded = true;
+            else if (translator.load(QStringLiteral(":/../translations/qterm2_en.qm"))) loaded = true;
+            if (!loaded) {
+                const QStringList candidates = {
+                    QStringLiteral("translations/qterm2_en.qm"),
+                    QCoreApplication::applicationDirPath() + QStringLiteral("/translations/qterm2_en.qm"),
+                    QCoreApplication::applicationDirPath() + QStringLiteral("/../translations/qterm2_en.qm"),
+                    QCoreApplication::applicationDirPath() + QStringLiteral("/../share/qterm2/translations/qterm2_en.qm"),
+                    QStringLiteral("/home/koratsuki/Desktop/QTerm2/translations/qterm2_en.qm"),
+                };
+                for (const auto &c : candidates) {
+                    if (QFile::exists(c) && translator.load(c)) { loaded = true; break; }
+                }
             }
         }
+        if (loaded) app.installTranslator(&translator);
     }
 
     const bool dark = context.settings()
