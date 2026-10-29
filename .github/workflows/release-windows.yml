@@ -51,11 +51,14 @@ jobs:
           if (Test-Path build\platforms) { Copy-Item build\platforms staging\platforms -Recurse -Force }
           if (Test-Path build\styles) { Copy-Item build\styles staging\styles -Recurse -Force }
           if (Test-Path build\translations) { Copy-Item build\translations staging\translations -Recurse -Force }
-          Compress-Archive -Path staging\* -DestinationPath QTerm2-Windows-x64.zip -Force
-          
+          $tag = $env:GITHUB_REF -replace 'refs/tags/',''
+          $zipName = "QTerm2-Windows-${tag}_x64.zip"
+          Compress-Archive -Path staging\* -DestinationPath $zipName -Force
+          "ZIP_NAME=$zipName" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Upload Windows ZIP & Release
         uses: softprops/action-gh-release@v1
         with:
-          files: QTerm2-Windows-x64.zip
+          files: ${{ env.ZIP_NAME }}
           draft: false
           prerelease: false
