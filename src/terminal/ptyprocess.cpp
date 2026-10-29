@@ -8,6 +8,7 @@
 #include <QSocketNotifier>
 #include <QTimer>
 #include <QProcessEnvironment>
+#include <windows.h>
 
 PtyProcess::PtyProcess(QObject *parent) : QObject(parent)
 {
@@ -32,12 +33,9 @@ bool PtyProcess::start(const QString &program, const QStringList &args,
 
     QString cmd = program;
     for (const QString &arg : args) {
-        if (cmd.contains(' ') || cmd.contains('"')) {
-            // keep as is
-        }
         cmd += " ";
         if (arg.contains(' ') || arg.contains('"'))
-            cmd += "\"" + arg.replace("\"", "\\\"") + "\"";
+            cmd += "\"" + arg;
         else
             cmd += arg;
     }
@@ -82,14 +80,17 @@ bool PtyProcess::start(const QString &program, const QStringList &args,
     std::wstring cmdW = cmd.toStdWString();
     std::wstring dirW = workDir.toStdWString();
 
+    LPWSTR cmdLine = cmdW.empty() ? NULL : &cmdW[0];
+    LPCWSTR dirLine = dirW.empty() ? NULL : dirW.c_str();
+
     BOOL bSuccess = CreateProcessW(NULL,
-        &cmdW[0],
+        cmdLine,
         NULL,
         NULL,
         TRUE,
         CREATE_NO_WINDOW,
         NULL,
-        dirW.isEmpty() ? NULL : dirW.c_str(),
+        dirLine,
         &siStartInfo,
         &piProcInfo);
 
