@@ -113,7 +113,7 @@ add_library(qterm2_app STATIC
 )
 target_link_libraries(qterm2_app PUBLIC qterm2_core)
 
-qt_add_executable(QTerm2 src/main.cpp)
+qt_add_executable(QTerm2 src/main.cpp src/resources.qrc)
 target_link_libraries(QTerm2 PRIVATE qterm2_app)
 
 install(TARGETS QTerm2 RUNTIME DESTINATION bin)

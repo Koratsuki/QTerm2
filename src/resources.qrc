@@ -1,5 +1,6 @@
-<qresource prefix="/">
-    <file>../translations/qterm2_en.qm</file>
-    <file alias="translations/qterm2_en.qm">../translations/qterm2_en.qm</file>
-</qresource>
+<RCC>
+    <qresource prefix="/">
+        <file>../translations/qterm2_en.qm</file>
+        <file alias="translations/qterm2_en.qm">../translations/qterm2_en.qm</file>
+    </qresource>
 </RCC>
