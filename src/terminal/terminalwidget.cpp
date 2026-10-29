@@ -109,8 +109,8 @@ TerminalWidget::TerminalWidget(QWidget *parent)
     m_colors = Theme::TerminalColors::forMode(Theme::Mode::Dark);
 
     QFontMetricsF fm(m_font);
-    m_cellW = std::max(1, qRound(fm.horizontalAdvance(QLatin1Char('M'))));
-    m_cellH = std::max(1, qCeil(fm.height()));
+    m_cellW = (std::max)(1, qRound(fm.horizontalAdvance(QLatin1Char('M'))));
+    m_cellH = (std::max)(1, qCeil(fm.height()));
     m_ascent = qRound(fm.ascent());
 
     m_blinkTimer.setTimerType(Qt::CoarseTimer);
@@ -237,8 +237,8 @@ void TerminalWidget::sendText(const QString &text)
 void TerminalWidget::updateTerminalSize()
 {
     QFontMetricsF fm(m_font);
-    m_cellW = std::max(1, qRound(fm.horizontalAdvance(QLatin1Char('M'))));
-    m_cellH = std::max(1, qCeil(fm.height()));
+    m_cellW = (std::max)(1, qRound(fm.horizontalAdvance(QLatin1Char('M'))));
+    m_cellH = (std::max)(1, qCeil(fm.height()));
     m_ascent = qRound(fm.ascent());
     const int rows = qMax(2, height() / m_cellH);
     const int cols = qMax(2, width() / m_cellW);
