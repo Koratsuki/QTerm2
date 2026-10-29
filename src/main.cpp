@@ -4,6 +4,12 @@
 #include <QPixmap>
 #include <QMessageBox>
 #include <QStyleFactory>
+#include <QTranslator>
+#include <QLibraryInfo>
+#include <QDir>
+#include <QLocale>
+#include <QFile>
+#include <QCoreApplication>
 
 #include "app/applicationcontext.h"
 #include "storage/settingsstore.h"
@@ -65,6 +71,26 @@ int main(int argc, char *argv[])
         QMessageBox::critical(nullptr, QObject::tr("QTerm2"),
                               QObject::tr("No se pudo iniciar QTerm2:\n%1").arg(error));
         return 1;
+    }
+
+    // Load translation
+    {
+        QString lang = QLocale::system().name().left(2);
+        if (context.settings())
+            lang = context.settings()->value(QStringLiteral("ui/language"), lang).toString();
+        if (lang == QStringLiteral("en")) {
+            static QTranslator translator;
+            const QString qm = QStringLiteral(":/translations/qterm2_en.qm");
+            if (QFile::exists(qm)) {
+                translator.load(qm);
+                app.installTranslator(&translator);
+            } else {
+                const QString qm2 = QCoreApplication::applicationDirPath() + QStringLiteral("/../share/qterm2/translations/qterm2_en.qm");
+                const QString qm3 = QStringLiteral("translations/qterm2_en.qm");
+                if (QFile::exists(qm2) && translator.load(qm2)) app.installTranslator(&translator);
+                else if (QFile::exists(qm3) && translator.load(qm3)) app.installTranslator(&translator);
+            }
+        }
     }
 
     const bool dark = context.settings()

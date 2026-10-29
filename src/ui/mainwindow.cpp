@@ -398,6 +398,18 @@ void MainWindow::buildUi()
     auto *cornerMenu = new QMenu(corner);
     cornerMenu->addAction(tr("Nueva terminal local"), this, &MainWindow::newLocalTab);
     cornerMenu->addAction(tr("Nueva conexión SSH…"), this, &MainWindow::promptNewSession);
+    cornerMenu->addAction(tr("Nueva conexión Telnet…"), this, [this]() {
+        Session s = Session::makeLocal();
+        s.type = Session::Type::Telnet;
+        s.name = tr("Telnet");
+        s.port = 23;
+        SessionDialog dlg(s, m_store ? m_store->groups() : QStringList(), this);
+        if (dlg.exec() == QDialog::Accepted && m_store) {
+            Session result = dlg.resultSession();
+            if (m_store->addSession(result))
+                connectSession(result.id);
+        }
+    });
     corner->setMenu(cornerMenu);
     m_tabs->setCornerWidget(corner, Qt::TopRightCorner);
 
@@ -544,6 +556,18 @@ void MainWindow::buildActions()
         { QKeySequence(QStringLiteral("Ctrl+T")) }, [this] { newLocalTab(); });
     add(QStringLiteral("newSsh"), tr("Nueva conexión SSH…"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+N")) }, [this] { promptNewSession(); });
+    add(QStringLiteral("newTelnet"), tr("Nueva conexión Telnet…"), {}, [this] {
+        Session s = Session::makeLocal();
+        s.type = Session::Type::Telnet;
+        s.name = tr("Telnet");
+        s.port = 23;
+        SessionDialog dlg(s, m_store ? m_store->groups() : QStringList(), this);
+        if (dlg.exec() == QDialog::Accepted && m_store) {
+            Session result = dlg.resultSession();
+            if (m_store->addSession(result))
+                connectSession(result.id);
+        }
+    });
     add(QStringLiteral("importSshConfig"), tr("Importar desde ~/.ssh/config…"), {},
         [this] { importSshConfig(); });
     add(QStringLiteral("exportSshConfig"), tr("Exportar a ~/.ssh/config…"), {},
@@ -846,6 +870,12 @@ void MainWindow::showPreferences()
     m_cursorBlink = dialog.blink();
     m_localShell = dialog.shell().isEmpty() ? defaultShellPath() : dialog.shell();
     m_darkTheme = dialog.darkTheme();
+    const QString lang = dialog.language();
+    if (!lang.isEmpty()) {
+        m_settings->setValue(QStringLiteral("ui/language"), lang);
+        // Language switching requires restart in this setup; notify user
+        statusBar()->showMessage(tr("Idioma guardado (%1). Reinicia la aplicación para aplicarlo.").arg(lang), 3000);
+    }
 
     saveSettings();
     applyTheme();
