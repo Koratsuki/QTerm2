@@ -69,7 +69,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            *.AppImage
             *.deb
             *.rpm
           draft: false
