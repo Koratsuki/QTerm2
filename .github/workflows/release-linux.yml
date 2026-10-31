@@ -65,6 +65,9 @@ jobs:
           rpmbuild -bb --nodeps ~/rpmbuild/SPECS/qterm2.spec
           mv ~/rpmbuild/RPMS/*/*.rpm .
           
+      - name: Cleanup appimagetool
+        run: rm -f appimagetool-x86_64.AppImage
+          
       - name: Upload Linux Artifacts & Release
         uses: softprops/action-gh-release@v1
         with:
