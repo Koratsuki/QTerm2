@@ -5,6 +5,9 @@ using qterm2::SessionStore;
 #include "domain/session.h"
 #include "sessions/sessionstore.h"
 #include "ui/theme.h"
+#include "ui/sessiondialog.h"
+#include "ui/mainwindow.h"
+#include "app/applicationcontext.h"
 
 #include <QApplication>
 #include <QDateTime>
@@ -156,24 +159,26 @@ Sidebar::Sidebar(SessionStore *store, QWidget *parent)
 
     auto *addButton = new QToolButton(this);
     addButton->setText(QStringLiteral("+"));
-    addButton->setToolTip(tr("Añadir una conexión"));
+    addButton->setToolTip(tr("Add connection or local terminal"));
     addButton->setPopupMode(QToolButton::InstantPopup);
     addButton->setFixedSize(24, 24);
     auto *addMenu = new QMenu(addButton);
-    QAction *sshAction = addMenu->addAction(tr("Nueva conexión SSH…"));
-    QAction *localAction = addMenu->addAction(tr("Nueva terminal local"));
+    QAction *localAction = addMenu->addAction(tr("New local terminal"));
+    auto *connMenu = addMenu->addMenu(tr("New connection"));
+    QAction *sshAction = connMenu->addAction(tr("SSH"));
+    QAction *telnetAction = connMenu->addAction(tr("Telnet"));
     addButton->setMenu(addMenu);
     header->addWidget(addButton);
 
     auto *hideButton = new QToolButton(this);
     hideButton->setText(QStringLiteral("\u2039"));
-    hideButton->setToolTip(tr("Ocultar panel de sesiones (Ctrl+B)"));
+    hideButton->setToolTip(tr("Hide sessions panel (Ctrl+B)"));
     hideButton->setFixedSize(24, 24);
     header->addWidget(hideButton);
     layout->addLayout(header);
 
     m_filter = new QLineEdit(this);
-    m_filter->setPlaceholderText(tr("Buscar servidor, usuario…"));
+    m_filter->setPlaceholderText(tr("Search server, user…"));
     m_filter->setClearButtonEnabled(true);
     layout->addWidget(m_filter);
 
@@ -199,11 +204,25 @@ Sidebar::Sidebar(SessionStore *store, QWidget *parent)
 
     connect(m_filter, &QLineEdit::textChanged, this, [this] { updateFilter(); });
     connect(hideButton, &QToolButton::clicked, this, &Sidebar::hideRequested);
-    connect(addButton->menu(), &QMenu::triggered, this, [this, sshAction, localAction](QAction *a) {
+    connect(addButton->menu(), &QMenu::triggered, this, [this, sshAction, localAction, telnetAction](QAction *a) {
         if (a == sshAction)
             emit newSshRequested();
         else if (a == localAction)
             emit newLocalRequested();
+        else if (a == telnetAction) {
+            if (auto *mw = qobject_cast<MainWindow*>(window())) {
+                Session s = Session::makeLocal();
+                s.type = Session::Type::Telnet;
+                s.name = tr("Telnet");
+                s.port = 23;
+                SessionDialog dlg(s, m_store ? m_store->groups() : QStringList(), mw);
+                if (dlg.exec() == QDialog::Accepted && m_store) {
+                    Session result = dlg.resultSession();
+                    if (m_store->addSession(result))
+                        emit connectRequested(result.id);
+                }
+            }
+        }
     });
 
     connect(m_tree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item) {
@@ -287,7 +306,7 @@ void Sidebar::buildTree()
         item->setData(0, TypeRole, int(s.type));
         item->setData(0, ColorRole, Session::colorForTag(s.colorTag));
         item->setData(0, TargetRole,
-                      s.isLocal() ? tr("Terminal local") : s.displayTarget());
+                      s.isLocal() ? tr("Local terminal") : s.displayTarget());
         item->setToolTip(0, QStringLiteral("%1\n%2\nAutenticación: %3")
                                 .arg(s.name, s.isLocal() ? s.shell : s.displayTarget(),
                                      s.isLocal() ? tr("—") : Session::authName(s.auth)));
@@ -327,7 +346,7 @@ void Sidebar::buildTree()
         if (s.favorite)
             favorites.append(s);
     }
-    addGroup(tr("Favoritos"), favorites);
+    addGroup(tr("Favorites"), favorites);
 
     QVector<Session> recents;
     for (const Session &s : sessions) {
@@ -337,9 +356,9 @@ void Sidebar::buildTree()
     std::sort(recents.begin(), recents.end(), [](const Session &a, const Session &b) {
         return a.lastUsedAt > b.lastUsedAt;
     });
-    if (recents.size() > 8)
-        recents.resize(8);
-    addGroup(tr("Recientes"), recents);
+    if (recents.size() > 15)
+        recents.resize(15);
+    addGroup(tr("Recents"), recents);
 
     QStringList groups;
     for (const Session &s : sessions) {
@@ -421,8 +440,8 @@ void Sidebar::showContextMenu(const QPoint &pos)
     QTreeWidgetItem *item = m_tree->itemAt(pos);
     if (!item || item->data(0, IsGroupRole).toBool()) {
         QMenu menu(this);
-        menu.addAction(tr("Nueva conexión SSH…"), this, &Sidebar::newSshRequested);
-        menu.addAction(tr("Nueva terminal local"), this, &Sidebar::newLocalRequested);
+        menu.addAction(tr("New SSH connection…"), this, &Sidebar::newSshRequested);
+        menu.addAction(tr("New local terminal"), this, &Sidebar::newLocalRequested);
         menu.exec(m_tree->viewport()->mapToGlobal(pos));
         return;
     }
@@ -434,20 +453,20 @@ void Sidebar::showContextMenu(const QPoint &pos)
     const QString groupName = item->parent() ? item->parent()->text(0).split("  ·").first() : QString();
 
     QMenu menu(this);
-    QAction *connectAction = menu.addAction(tr("Conectar"));
-    QAction *editAction = menu.addAction(tr("Editar…"));
+    QAction *connectAction = menu.addAction(tr("Connect"));
+    QAction *editAction = menu.addAction(tr("Edit…"));
     QAction *favoriteAction = menu.addAction(
-        s.favorite ? tr("Quitar de favoritos") : tr("Añadir a favoritos"));
-    QAction *duplicateAction = menu.addAction(tr("Duplicar"));
+        s.favorite ? tr("Remove from favorites") : tr("Add to favorites"));
+    QAction *duplicateAction = menu.addAction(tr("Duplicate"));
     menu.addSeparator();
     QAction *keyAction = nullptr;
     QAction *copyCommandAction = nullptr;
     if (!s.isLocal()) {
-        keyAction = menu.addAction(tr("Instalar llave pública en el servidor…"));
+        keyAction = menu.addAction(tr("Install public key on server…"));
         copyCommandAction = menu.addAction(tr("Copiar comando SSH"));
         menu.addSeparator();
     }
-    if (groupName == tr("Recientes") || groupName == QStringLiteral("Recientes")) {
+    if (groupName == tr("Recents") || groupName == QStringLiteral("Recientes")) {
         QAction *removeFromRecent = menu.addAction(tr("Quitar de recientes"));
         QAction *chosen2 = menu.exec(m_tree->viewport()->mapToGlobal(pos));
         if (!chosen2)

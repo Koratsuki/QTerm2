@@ -146,8 +146,8 @@ int main(int argc, char *argv[])
             }
             return -1;
         };
-        const int favoritesIndex = groupIndex(QStringLiteral("Favoritos"));
-        const int recentsIndex = groupIndex(QStringLiteral("Recientes"));
+        const int favoritesIndex = groupIndex(QStringLiteral("Favorites"));
+        const int recentsIndex = groupIndex(QStringLiteral("Recents"));
         const int localsIndex = groupIndex(QStringLiteral("Locales"));
         check(favoritesIndex >= 0, "favorites group is shown");
         check(recentsIndex >= 0, "recent group is shown");

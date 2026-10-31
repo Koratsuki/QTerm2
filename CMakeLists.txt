@@ -7,7 +7,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets Sql)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets Sql Network)
 
 # ---------------------------------------------------------------- libsecret ----
 # Credential storage is optional.  When libsecret is missing the application
@@ -87,7 +87,7 @@ add_library(qterm2_core STATIC
 )
 
 target_include_directories(qterm2_core PUBLIC src)
-target_link_libraries(qterm2_core PUBLIC Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql)
+target_link_libraries(qterm2_core PUBLIC Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql Qt6::Network)
 
 if(UNIX AND NOT APPLE)
     target_link_libraries(qterm2_core PUBLIC util)
@@ -101,6 +101,7 @@ endif()
 # ------------------------------------------------------------- application ----
 add_library(qterm2_app STATIC
     src/ui/mainwindow.h             src/ui/mainwindow.cpp
+    src/ui/mainwindow.ui
     src/ui/sidebar.h                src/ui/sidebar.cpp
     src/ui/terminalpane.h           src/ui/terminalpane.cpp
     src/ui/sessiondialog.h          src/ui/sessiondialog.cpp
@@ -110,6 +111,9 @@ add_library(qterm2_app STATIC
     src/ui/commandpalettedialog.h   src/ui/commandpalettedialog.cpp
     src/ui/snippetdialog.h          src/ui/snippetdialog.cpp
     src/ui/globalsearchdialog.h     src/ui/globalsearchdialog.cpp
+    src/ui/networkdiscoverydialog.h src/ui/networkdiscoverydialog.cpp
+    src/ui/servermonitor.h src/ui/servermonitor.cpp
+    src/ui/applockdialog.h src/ui/applockdialog.cpp
 )
 target_link_libraries(qterm2_app PUBLIC qterm2_core)
 
@@ -142,3 +146,4 @@ target_link_libraries(qterm2_archtest PRIVATE qterm2_core)
 add_test(NAME archtest COMMAND qterm2_archtest)
 set_tests_properties(archtest PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# UI files

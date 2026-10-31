@@ -75,7 +75,7 @@ SnippetDialog::SnippetDialog(SnippetStore *store, const Session &context,
     form->setLabelAlignment(Qt::AlignLeft);
     m_name = new QLineEdit(right);
     m_name->setObjectName(QStringLiteral("SnippetName"));
-    form->addRow(tr("Nombre"), m_name);
+    form->addRow(tr("Name"), m_name);
     rightLayout->addLayout(form);
 
     rightLayout->addWidget(new QLabel(tr("Comando"), right));

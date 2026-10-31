@@ -73,18 +73,19 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Load translation
+    // Load translation - English primary, Spanish secondary
     {
         QString lang = QLocale::system().name().left(2);
         if (context.settings())
             lang = context.settings()->value(QStringLiteral("ui/language"), lang).toString();
+        // Default to English if not Spanish
+        if (lang != QStringLiteral("es"))
+            lang = QStringLiteral("en");
         static QTranslator translator;
         bool loaded = false;
-        if (lang == QStringLiteral("en") || lang.startsWith(QStringLiteral("en"))) {
-            // Try resource paths
+        if (lang == QStringLiteral("en")) {
             if (translator.load(QStringLiteral(":/translations/qterm2_en.qm"))) loaded = true;
             else if (translator.load(QStringLiteral(":/qterm2_en.qm"))) loaded = true;
-            else if (translator.load(QStringLiteral(":/../translations/qterm2_en.qm"))) loaded = true;
             if (!loaded) {
                 const QStringList candidates = {
                     QStringLiteral("translations/qterm2_en.qm"),
@@ -109,6 +110,10 @@ int main(int argc, char *argv[])
 
     app.setWindowIcon(makeAppIcon());
 
+    // Application lock disabled for now
+    // #include "ui/applockdialog.h"
+    // if (!AppLockDialog::unlock(nullptr))
+    //     return 0;
     MainWindow window(&context);
     window.show();
 

@@ -13,7 +13,9 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QToolButton>
+#include <QPushButton>
 #include <QLabel>
+#include <QStyle>
 
 class PaneWrapper : public QWidget
 {
@@ -39,10 +41,10 @@ public:
         headerLayout->addWidget(m_titleLabel, 1);
 
         m_closeButton = new QToolButton(this);
-        m_closeButton->setText(QStringLiteral("✕"));
-        m_closeButton->setToolTip(tr("Cerrar panel dividido"));
+        m_closeButton->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
+        m_closeButton->setToolTip(tr("Close split pane"));
+        m_closeButton->setAutoRaise(true);
         m_closeButton->setFixedSize(20, 20);
-        m_closeButton->setStyleSheet(QStringLiteral("QToolButton { border: none; border-radius: 3px; font-weight: bold; color: palette(window-text); } QToolButton:hover { background: palette(highlight); color: palette(highlighted-text); }"));
         headerLayout->addWidget(m_closeButton);
 
         layout->addWidget(m_header);

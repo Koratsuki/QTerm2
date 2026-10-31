@@ -101,7 +101,7 @@ public:
         }
 
         m_path = new QLineEdit(suggested, this);
-        auto *browse = new QPushButton(tr("Examinar…"), this);
+        auto *browse = new QPushButton(tr("Browse…"), this);
         form->addRow(tr("Ruta de la llave"), rowWidget({ m_path, browse }, this));
 
         m_comment = new QLineEdit(this);
@@ -112,7 +112,7 @@ public:
 
         m_passphrase = new QLineEdit(this);
         m_passphrase->setEchoMode(QLineEdit::Password);
-        m_passphrase->setPlaceholderText(tr("Recomendado; puede quedar vacío"));
+        m_passphrase->setPlaceholderText(tr("Recommended; can be empty"));
         form->addRow(tr("Passphrase"), m_passphrase);
 
         m_confirm = new QLineEdit(this);
@@ -198,7 +198,7 @@ SessionDialog::SessionDialog(const Session &session, const QStringList &groups,
     , m_result(session)
     , m_groups(groups)
 {
-    setWindowTitle(session.id.isEmpty() ? tr("Nueva conexión") : tr("Editar sesión"));
+    setWindowTitle(session.id.isEmpty() ? tr("New connection") : tr("Edit session"));
     setMinimumSize(720, 640);
     resize(780, 720);
 
@@ -217,7 +217,7 @@ SessionDialog::SessionDialog(const Session &session, const QStringList &groups,
     buildTerminalTab();
 
     m_buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, this);
-    auto *save = m_buttons->addButton(tr("Guardar sesión"), QDialogButtonBox::AcceptRole);
+    auto *save = m_buttons->addButton(tr("Save session"), QDialogButtonBox::AcceptRole);
     save->setDefault(true);
     layout->addWidget(m_buttons);
 
@@ -242,29 +242,28 @@ void SessionDialog::buildGeneralTab()
     form->setSpacing(9);
 
     m_name = new QLineEdit(page);
-    m_name->setPlaceholderText(tr("Producción, NAS de casa, Laboratorio…"));
-    form->addRow(tr("Nombre"), m_name);
+    m_name->setPlaceholderText(tr("e.g. Production, NAS, Lab…"));
+    form->addRow(tr("Name"), m_name);
 
     m_group = new QComboBox(page);
     m_group->setEditable(true);
     m_group->addItems(m_groups);
-    if (!m_groups.contains(QStringLiteral("Servidores")))
-        m_group->addItem(QStringLiteral("Servidores"));
-    if (!m_groups.contains(QStringLiteral("Locales")))
-        m_group->addItem(QStringLiteral("Locales"));
-    form->addRow(tr("Grupo"), m_group);
+    if (!m_groups.contains(QStringLiteral("Servers")))
+        m_group->addItem(QStringLiteral("Servers"));
+    if (!m_groups.contains(QStringLiteral("Local")))
+        m_group->addItem(QStringLiteral("Local"));
+    form->addRow(tr("Group"), m_group);
 
     m_type = new QComboBox(page);
-    m_type->addItem(tr("Servidor SSH"), QStringLiteral("ssh"));
+    m_type->addItem(tr("SSH"), QStringLiteral("ssh"));
     m_type->addItem(tr("Telnet"), QStringLiteral("telnet"));
-    m_type->addItem(tr("Terminal local"), QStringLiteral("local"));
-    form->addRow(tr("Tipo"), m_type);
+    form->addRow(tr("Type"), m_type);
 
     m_color = new QComboBox(page);
     fillColorCombo();
     form->addRow(tr("Color"), m_color);
 
-    m_favorite = new QCheckBox(tr("Marcar como favorito"), page);
+    m_favorite = new QCheckBox(tr("Mark as favorite"), page);
     m_favorite->setObjectName(QStringLiteral("FavoriteCheck"));
     m_favorite->setToolTip(tr("Los favoritos aparecen en un grupo propio en el panel lateral."));
     form->addRow(QString(), m_favorite);
@@ -276,16 +275,16 @@ void SessionDialog::buildGeneralTab()
     sshForm->setSpacing(9);
     m_host = new QLineEdit(m_sshBox);
     m_host->setPlaceholderText(tr("servidor.ejemplo.com o 192.168.1.20"));
-    sshForm->addRow(tr("Servidor"), m_host);
+    sshForm->addRow(tr("Host"), m_host);
 
     m_port = new QSpinBox(m_sshBox);
     m_port->setRange(1, 65535);
     m_port->setValue(22);
-    sshForm->addRow(tr("Puerto"), m_port);
+    sshForm->addRow(tr("Port"), m_port);
 
     m_user = new QLineEdit(m_sshBox);
     m_user->setPlaceholderText(tr("usuario remoto"));
-    sshForm->addRow(tr("Usuario"), m_user);
+    sshForm->addRow(tr("User"), m_user);
     form->addRow(m_sshBox);
 
     m_localBox = new QWidget(page);
@@ -329,14 +328,14 @@ void SessionDialog::buildAuthTab()
     form->setSpacing(9);
 
     m_auth = new QComboBox(page);
-    m_auth->addItem(tr("Llave pública (recomendado)"), QStringLiteral("publickey"));
+    m_auth->addItem(tr("Public key (recommended)"), QStringLiteral("publickey"));
     m_auth->addItem(tr("Agente SSH (ssh-agent)"), QStringLiteral("agent"));
-    m_auth->addItem(tr("Contraseña (se pide en la terminal)"), QStringLiteral("password"));
+    m_auth->addItem(tr("Password (prompt in terminal)"), QStringLiteral("password"));
     form->addRow(tr("Método"), m_auth);
 
     m_key = new QLineEdit(page);
     m_key->setPlaceholderText(tr("~/.ssh/id_ed25519"));
-    m_browseKey = new QPushButton(tr("Examinar…"), page);
+    m_browseKey = new QPushButton(tr("Browse…"), page);
     m_generateKey = new QPushButton(tr("Generar…"), page);
     m_keyRow = rowWidget({ m_key, m_browseKey, m_generateKey }, page);
     form->addRow(tr("Llave privada"), m_keyRow);
@@ -367,7 +366,7 @@ void SessionDialog::buildAuthTab()
     layout->addWidget(installHint);
     layout->addStretch(1);
 
-    m_tabs->addTab(page, tr("Autenticación"));
+    m_tabs->addTab(page, tr("Authentication"));
 
     connect(m_auth, &QComboBox::currentIndexChanged, this, [this] { updateAuthUi(); });
     connect(m_key, &QLineEdit::textChanged, this, [this] { updateAuthUi(); });
@@ -400,7 +399,7 @@ void SessionDialog::buildAdvancedTab()
     m_initialCommand = new QLineEdit(page);
     m_initialCommand->setPlaceholderText(tr("tmux attach || tmux new (opcional)"));
     m_initialRow = m_initialCommand;
-    form->addRow(tr("Comando inicial"), m_initialCommand);
+    form->addRow(tr("Initial command"), m_initialCommand);
 
     m_hostKeyPolicy = new QComboBox(page);
     m_hostKeyPolicy->setObjectName(QStringLiteral("HostKeyPolicyCombo"));
@@ -450,7 +449,7 @@ void SessionDialog::buildAdvancedTab()
     layout->addWidget(m_notes);
     layout->addStretch(1);
 
-    m_tabs->addTab(page, tr("Avanzado"));
+    m_tabs->addTab(page, tr("Advanced"));
 }
 
 void SessionDialog::buildForwardsTab()
@@ -471,8 +470,8 @@ void SessionDialog::buildForwardsTab()
 
     m_forwards = new QTableWidget(0, 6, m_forwardsPage);
     m_forwards->setObjectName(QStringLiteral("ForwardsTable"));
-    m_forwards->setHorizontalHeaderLabels({ tr("Tipo"), tr("Host escucha"),
-                                            tr("Puerto"), tr("Destino"),
+    m_forwards->setHorizontalHeaderLabels({ tr("Type"), tr("Host escucha"),
+                                            tr("Port"), tr("Destino"),
                                             tr("Puerto destino"), tr("Activo") });
     m_forwards->verticalHeader()->setVisible(false);
     m_forwards->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -733,7 +732,7 @@ void SessionDialog::load(const Session &session)
     m_session = session;
 
     m_name->setText(session.name);
-    m_group->setCurrentText(session.group.isEmpty() ? QStringLiteral("Servidores") : session.group);
+    m_group->setCurrentText(session.group.isEmpty() ? QStringLiteral("Servers") : session.group);
     m_type->setCurrentIndex(session.isLocal() ? 1 : 0);
 
     const int colorIndex = m_color->findData(session.colorTag);
@@ -789,7 +788,7 @@ void SessionDialog::load(const Session &session)
         addPortForwardRow(forward);
 
     if (session.id.isEmpty()) {
-        setWindowTitle(tr("Nueva conexión"));
+        setWindowTitle(tr("New connection"));
         if (session.name.isEmpty())
             m_name->setFocus();
     } else {
@@ -933,7 +932,7 @@ void SessionDialog::showPublicKey()
     const QString path = expandedKeyPath();
     const QString pub = qterm2::ssh::KeyManager::publicKeyFor(path);
     if (pub.isEmpty()) {
-        QMessageBox::warning(this, tr("Sin llave pública"),
+        QMessageBox::warning(this, tr("No public key"),
                              tr("No se encontró el archivo .pub de la llave seleccionada."));
         return;
     }
@@ -961,7 +960,7 @@ void SessionDialog::showPublicKey()
     layout->addWidget(text, 1);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
-    auto *copy = buttons->addButton(tr("Copiar"), QDialogButtonBox::ActionRole);
+    auto *copy = buttons->addButton(tr("Copy"), QDialogButtonBox::ActionRole);
     connect(copy, &QPushButton::clicked, this, [pub] {
         QApplication::clipboard()->setText(pub);
     });
@@ -975,7 +974,7 @@ void SessionDialog::copyPublicKey()
 {
     const QString pub = qterm2::ssh::KeyManager::publicKeyFor(expandedKeyPath());
     if (pub.isEmpty()) {
-        QMessageBox::warning(this, tr("Sin llave pública"),
+        QMessageBox::warning(this, tr("No public key"),
                              tr("No se encontró el archivo .pub de la llave seleccionada."));
         return;
     }
@@ -988,15 +987,15 @@ bool SessionDialog::validate()
 
     QString name = m_name->text().trimmed();
     if (name.isEmpty())
-        name = ssh ? m_host->text().trimmed() : tr("Terminal local");
+        name = ssh ? m_host->text().trimmed() : tr("Local terminal");
     if (name.isEmpty()) {
-        QMessageBox::warning(this, tr("Falta el nombre"),
+        QMessageBox::warning(this, tr("Name required"),
                              tr("Escribe un nombre o al menos el servidor."));
         return false;
     }
 
     if (ssh && m_host->text().trimmed().isEmpty()) {
-        QMessageBox::warning(this, tr("Falta el servidor"),
+        QMessageBox::warning(this, tr("Host required"),
                              tr("El nombre o la IP del servidor es obligatorio."));
         m_tabs->setCurrentIndex(0);
         m_host->setFocus();
@@ -1006,7 +1005,7 @@ bool SessionDialog::validate()
     if (ssh && m_auth->currentData().toString() == QStringLiteral("publickey")) {
         const QString path = expandedKeyPath();
         if (path.isEmpty()) {
-            QMessageBox::warning(this, tr("Falta la llave"),
+            QMessageBox::warning(this, tr("Key required"),
                                  tr("Selecciona una llave privada o genera una nueva."));
             m_tabs->setCurrentIndex(1);
             m_key->setFocus();
@@ -1047,7 +1046,7 @@ bool SessionDialog::validate()
     s.user = m_user->text().trimmed();
     
     if (s.group.isEmpty())
-        s.group = (ssh || isTelnet) ? QStringLiteral("Servidores") : QStringLiteral("Locales");
+        s.group = (ssh || isTelnet) ? QStringLiteral("Servers") : QStringLiteral("Local");
 
     const QString auth = m_auth->currentData().toString();
     s.auth = auth == QStringLiteral("agent") ? Session::Auth::Agent

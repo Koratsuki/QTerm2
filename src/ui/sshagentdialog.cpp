@@ -17,7 +17,7 @@ SshAgentDialog::SshAgentDialog(const AgentStatus &status, QWidget *parent)
     : QDialog(parent)
     , m_status(status)
 {
-    setWindowTitle(tr("Agente SSH"));
+    setWindowTitle(tr("SSH Agent"));
     resize(820, 460);
 
     auto *layout = new QVBoxLayout(this);
@@ -47,7 +47,7 @@ SshAgentDialog::SshAgentDialog(const AgentStatus &status, QWidget *parent)
     m_table = new QTableWidget(0, 4, this);
     m_table->setObjectName(QStringLiteral("AgentTable"));
     m_table->setHorizontalHeaderLabels({ tr("Bits"), tr("Huella"),
-                                         tr("Tipo"), tr("Comentario") });
+                                         tr("Type"), tr("Comentario") });
     m_table->verticalHeader()->setVisible(false);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);

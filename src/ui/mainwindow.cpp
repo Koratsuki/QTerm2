@@ -58,6 +58,7 @@ using qterm2::SessionStore;
 #include <QToolBar>
 #include <QToolButton>
 #include <QUuid>
+#include <QSystemTrayIcon>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -102,7 +103,7 @@ public:
                       const QString &shell, bool dark, QWidget *parent)
         : QDialog(parent)
     {
-        setWindowTitle(tr("Preferencias de QTerm2"));
+        setWindowTitle(tr("QTerm2 Preferences"));
         setMinimumWidth(520);
 
         auto *layout = new QVBoxLayout(this);
@@ -122,12 +123,12 @@ public:
         m_size->setRange(6, 40);
         m_size->setValue(fontSize);
         m_size->setSuffix(tr(" pt"));
-        form->addRow(tr("Tamaño"), m_size);
+        form->addRow(tr("Size"), m_size);
 
         m_scrollback = new QSpinBox(this);
         m_scrollback->setRange(0, 200000);
         m_scrollback->setSingleStep(1000);
-        m_scrollback->setSuffix(tr(" líneas"));
+        m_scrollback->setSuffix(tr(" lines"));
         m_scrollback->setValue(scrollback);
         form->addRow(tr("Historial"), m_scrollback);
 
@@ -142,11 +143,11 @@ public:
 
         m_blink = new QCheckBox(tr("Cursor parpadeante"), this);
         m_blink->setChecked(blink);
-        m_blink->setToolTip(tr("Desactívalo para mantener el cursor siempre visible."));
+        m_blink->setToolTip(tr("Uncheck to keep cursor always visible."));
         form->addRow(QString(), m_blink);
 
         m_shell = new QLineEdit(shell, this);
-        auto *browse = new QPushButton(tr("Examinar…"), this);
+        auto *browse = new QPushButton(tr("Browse…"), this);
         auto *shellRow = new QWidget(this);
         auto *shellLayout = new QHBoxLayout(shellRow);
         shellLayout->setContentsMargins(0, 0, 0, 0);
@@ -164,7 +165,7 @@ public:
         m_lang = new QComboBox(this);
         m_lang->addItem(QStringLiteral("Español"), QStringLiteral("es"));
         m_lang->addItem(QStringLiteral("English"), QStringLiteral("en"));
-        form->addRow(tr("Idioma / Language"), m_lang);
+        form->addRow(tr("Language"), m_lang);
 
         layout->addLayout(form);
 
@@ -311,8 +312,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
         }
         if (running > 0) {
             const auto answer = QMessageBox::question(
-                this, tr("Cerrar QTerm2"),
-                tr("Hay %1 sesiones activas. ¿Cerrar de todos modos?").arg(running),
+                this, tr("Close QTerm2"),
+                tr("There is %1 active sessions. ¿Close anyway?").arg(running),
                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
             if (answer != QMessageBox::Yes) {
                 event->ignore();
@@ -321,6 +322,19 @@ void MainWindow::closeEvent(QCloseEvent *event)
         }
     }
     saveSettings();
+    // save session state
+    if (m_settings) {
+        QStringList ids;
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (auto *pane = qobject_cast<TerminalPane*>(m_tabs->widget(i))) {
+                if (auto *term = pane->activeTerminal()) {
+                    if (!term->property("sessionId").toString().isEmpty())
+                        ids << term->property("sessionId").toString();
+                }
+            }
+        }
+        m_settings->setValue(QStringLiteral("ui/restoredSessionIds"), ids);
+    }
     QMainWindow::closeEvent(event);
 }
 
@@ -351,7 +365,7 @@ void MainWindow::buildUi()
     searchLayout->setSpacing(7);
 
     m_searchEdit = new QLineEdit(m_searchBar);
-    m_searchEdit->setPlaceholderText(tr("Buscar en la terminal…"));
+    m_searchEdit->setPlaceholderText(tr("Find in terminal…"));
     m_searchEdit->setClearButtonEnabled(true);
     m_searchEdit->setMaximumWidth(430);
     searchLayout->addWidget(m_searchEdit);
@@ -369,7 +383,7 @@ void MainWindow::buildUi()
     nextButton->setToolTip(tr("Coincidencia siguiente (F3)"));
     auto *closeButton = new QToolButton(m_searchBar);
     closeButton->setText(QStringLiteral("\u2715"));
-    closeButton->setToolTip(tr("Cerrar búsqueda (Esc)"));
+    closeButton->setToolTip(tr("Close search (Esc)"));
     searchLayout->addWidget(prevButton);
     searchLayout->addWidget(nextButton);
     searchLayout->addWidget(closeButton);
@@ -393,12 +407,13 @@ void MainWindow::buildUi()
 
     auto *corner = new QToolButton(m_tabs);
     corner->setText(QStringLiteral("+"));
-    corner->setToolTip(tr("Nueva pestaña"));
+    corner->setToolTip(tr("New tab"));
     corner->setPopupMode(QToolButton::InstantPopup);
     auto *cornerMenu = new QMenu(corner);
-    cornerMenu->addAction(tr("Nueva terminal local"), this, &MainWindow::newLocalTab);
-    cornerMenu->addAction(tr("Nueva conexión SSH…"), this, &MainWindow::promptNewSession);
-    cornerMenu->addAction(tr("Nueva conexión Telnet…"), this, [this]() {
+    cornerMenu->addAction(tr("New local terminal"), this, &MainWindow::newLocalTab);
+    auto *connMenu = cornerMenu->addMenu(tr("New connection"));
+    connMenu->addAction(tr("SSH"), this, &MainWindow::promptNewSession);
+    connMenu->addAction(tr("Telnet"), this, [this]() {
         Session s = Session::makeLocal();
         s.type = Session::Type::Telnet;
         s.name = tr("Telnet");
@@ -413,6 +428,18 @@ void MainWindow::buildUi()
     corner->setMenu(cornerMenu);
     m_tabs->setCornerWidget(corner, Qt::TopRightCorner);
 
+    if (QSystemTrayIcon::isSystemTrayAvailable()) {
+        auto *tray = new QSystemTrayIcon(this);
+        tray->setIcon(windowIcon());
+        auto *trayMenu = new QMenu(this);
+        trayMenu->addAction(tr("Show"), this, &QWidget::showNormal);
+        trayMenu->addAction(tr("Hide"), this, &QWidget::hide);
+        trayMenu->addSeparator();
+        trayMenu->addAction(tr("Quit"), this, &QApplication::quit);
+        tray->setContextMenu(trayMenu);
+        tray->show();
+    }
+
     m_splitter->addWidget(right);
     m_splitter->setStretchFactor(0, 0);
     m_splitter->setStretchFactor(1, 1);
@@ -420,6 +447,21 @@ void MainWindow::buildUi()
     setCentralWidget(m_splitter);
 
     // ---- signals ---------------------------------------------------------
+    m_tabs->tabBar()->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_tabs->tabBar(), &QTabBar::customContextMenuRequested, this, [this](const QPoint &pos) {
+        int index = m_tabs->tabBar()->tabAt(pos);
+        if (index < 0)
+            return;
+        QMenu menu(this);
+        menu.addAction(tr("Split Vertically"), this, [this]() { splitActive(Qt::Horizontal); });
+        menu.addAction(tr("Split Horizontally"), this, [this]() { splitActive(Qt::Vertical); });
+        menu.addSeparator();
+        menu.addAction(tr("Reconnect"), this, [this]() { /* reconnect not fully implemented */ });
+        menu.addAction(tr("Disconnect"), this, [this, index]() { closeTabAt(index, false); });
+        menu.addSeparator();
+        menu.addAction(tr("Close"), this, [this, index]() { closeTabAt(index, true); });
+        menu.exec(m_tabs->tabBar()->mapToGlobal(pos));
+    });
     connect(m_tabs, &QTabWidget::tabCloseRequested, this, [this](int index) {
         closeTabAt(index, true);
     });
@@ -493,7 +535,7 @@ QWidget *MainWindow::buildWelcomePage()
     layout->addWidget(title);
 
     auto *subtitle = new QLabel(
-        tr("Terminal xterm-256color · Gestor de sesiones SSH · Pestañas y paneles"), page);
+        tr("Terminal xterm-256color · SSH session manager · Tabs and panes"), page);
     subtitle->setObjectName(QStringLiteral("Hint"));
     subtitle->setAlignment(Qt::AlignHCenter);
     layout->addWidget(subtitle);
@@ -503,9 +545,9 @@ QWidget *MainWindow::buildWelcomePage()
     auto *buttons = new QHBoxLayout;
     buttons->setSpacing(10);
     buttons->addStretch(1);
-    auto *localButton = new QPushButton(tr("Nueva terminal local"), page);
+    auto *localButton = new QPushButton(tr("New local terminal"), page);
     localButton->setDefault(true);
-    auto *sshButton = new QPushButton(tr("Nueva conexión SSH"), page);
+    auto *sshButton = new QPushButton(tr("New SSH connection"), page);
     auto *sessionsButton = new QPushButton(tr("Mostrar sesiones"), page);
     buttons->addWidget(localButton);
     buttons->addWidget(sshButton);
@@ -552,11 +594,11 @@ void MainWindow::buildActions()
         return action;
     };
 
-    add(QStringLiteral("newLocal"), tr("Nueva terminal local"),
+    add(QStringLiteral("newLocal"), tr("New local terminal"),
         { QKeySequence(QStringLiteral("Ctrl+T")) }, [this] { newLocalTab(); });
-    add(QStringLiteral("newSsh"), tr("Nueva conexión SSH…"),
+    add(QStringLiteral("newSsh"), tr("New SSH connection…"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+N")) }, [this] { promptNewSession(); });
-    add(QStringLiteral("newTelnet"), tr("Nueva conexión Telnet…"), {}, [this] {
+    add(QStringLiteral("newTelnet"), tr("New Telnet connection…"), {}, [this] {
         Session s = Session::makeLocal();
         s.type = Session::Type::Telnet;
         s.name = tr("Telnet");
@@ -568,23 +610,23 @@ void MainWindow::buildActions()
                 connectSession(result.id);
         }
     });
-    add(QStringLiteral("importSshConfig"), tr("Importar desde ~/.ssh/config…"), {},
+    add(QStringLiteral("importSshConfig"), tr("Import from ~/.ssh/config…"), {},
         [this] { importSshConfig(); });
-    add(QStringLiteral("exportSshConfig"), tr("Exportar a ~/.ssh/config…"), {},
+    add(QStringLiteral("exportSshConfig"), tr("Export to ~/.ssh/config…"), {},
         [this] { exportSshConfig(); });
-    add(QStringLiteral("knownHosts"), tr("Ver known_hosts…"), {},
+    add(QStringLiteral("knownHosts"), tr("View known_hosts…"), {},
         [this] { showKnownHosts(); });
-    add(QStringLiteral("sshAgent"), tr("Agente SSH…"), {},
+    add(QStringLiteral("sshAgent"), tr("SSH Agent…"), {},
         [this] { showSshAgent(); });
     add(QStringLiteral("snippets"), tr("Snippets…"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+S")) },
         [this] { showSnippets(); });
-    add(QStringLiteral("closeTab"), tr("Cerrar pestaña"),
+    add(QStringLiteral("closeTab"), tr("Close tab"),
         { QKeySequence(QStringLiteral("Ctrl+W")) }, [this] { closeTabAt(m_tabs->currentIndex(), true); });
-    add(QStringLiteral("closePane"), tr("Cerrar panel"),
+    add(QStringLiteral("closePane"), tr("Close pane"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+W")) }, [this] { closeCurrentPane(); });
 
-    add(QStringLiteral("copy"), tr("Copiar"),
+    add(QStringLiteral("copy"), tr("Copy"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+C")) }, [this] {
         if (TerminalWidget *term = activeTerminal()) {
             if (!term->selectedText().isEmpty()) {
@@ -593,54 +635,54 @@ void MainWindow::buildActions()
             }
         }
     });
-    add(QStringLiteral("paste"), tr("Pegar"),
+    add(QStringLiteral("paste"), tr("Paste"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+V")) }, [this] {
         if (TerminalWidget *term = activeTerminal())
             term->pasteClipboard();
     });
-    add(QStringLiteral("selectAll"), tr("Seleccionar todo"),
+    add(QStringLiteral("selectAll"), tr("Select All"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+A")) }, [this] {
         if (TerminalWidget *term = activeTerminal())
             term->selectAll();
     });
 
-    add(QStringLiteral("search"), tr("Buscar en la terminal…"),
+    add(QStringLiteral("search"), tr("Find in terminal…"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+F")) }, [this] {
         if (m_searchBar->isVisible())
             hideSearch();
         else
             showSearch();
     });
-    add(QStringLiteral("globalSearch"), tr("Buscar en todas las pestañas…"),
+    add(QStringLiteral("globalSearch"), tr("Find in all tabs…"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+G")) },
         [this] { showGlobalSearch(); });
-    add(QStringLiteral("clear"), tr("Limpiar historial"),
+    add(QStringLiteral("clear"), tr("Clear history"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+K")) }, [this] {
         if (TerminalWidget *term = activeTerminal()) {
             term->clearScrollback();
             statusBar()->showMessage(tr("Historial borrado"), 1800);
         }
     });
-    add(QStringLiteral("reset"), tr("Reiniciar terminal"),
+    add(QStringLiteral("reset"), tr("Reset terminal"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+R")) }, [this] {
         if (TerminalWidget *term = activeTerminal())
             term->resetTerminal();
     });
 
-    add(QStringLiteral("splitRight"), tr("Dividir a la derecha"),
+    add(QStringLiteral("splitRight"), tr("Split right"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+D")) },
         [this] { splitActive(Qt::Horizontal); });
-    add(QStringLiteral("splitDown"), tr("Dividir abajo"),
+    add(QStringLiteral("splitDown"), tr("Split down"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+E")) },
         [this] { splitActive(Qt::Vertical); });
 
-    add(QStringLiteral("zoomIn"), tr("Aumentar tamaño"),
+    add(QStringLiteral("zoomIn"), tr("Zoom in"),
         { QKeySequence::ZoomIn, QKeySequence(QStringLiteral("Ctrl+=")) },
         [this] { adjustFontSize(1); });
-    add(QStringLiteral("zoomOut"), tr("Reducir tamaño"),
+    add(QStringLiteral("zoomOut"), tr("Zoom out"),
         { QKeySequence::ZoomOut, QKeySequence(QStringLiteral("Ctrl+-")) },
         [this] { adjustFontSize(-1); });
-    add(QStringLiteral("zoomReset"), tr("Tamaño normal"),
+    add(QStringLiteral("zoomReset"), tr("Normal size"),
         { QKeySequence(QStringLiteral("Ctrl+0")) }, [this] { resetFontSize(); });
 
     m_toggleSidebarAction = add(QStringLiteral("toggleSidebar"),
@@ -651,7 +693,7 @@ void MainWindow::buildActions()
     m_toggleSidebarAction->setObjectName(QStringLiteral("ToggleSidebarAction"));
     m_toggleSidebarAction->setToolTip(tr("Mostrar u ocultar el panel de sesiones (Ctrl+B)"));
 
-    m_darkThemeAction = add(QStringLiteral("darkTheme"), tr("Tema oscuro"), {},
+    m_darkThemeAction = add(QStringLiteral("darkTheme"), tr("Dark theme"), {},
                             [this] { applyTheme(); }, true, m_darkTheme);
     // The theme action is wired through toggled below so that its state is the
     // source of truth.
@@ -660,7 +702,7 @@ void MainWindow::buildActions()
         applyTheme();
     });
 
-    add(QStringLiteral("fullscreen"), tr("Pantalla completa"),
+    add(QStringLiteral("fullscreen"), tr("Full screen"),
         { QKeySequence(Qt::Key_F11) }, [this] {
         if (isFullScreen()) {
             showNormal();
@@ -671,18 +713,18 @@ void MainWindow::buildActions()
     add(QStringLiteral("commandPalette"), tr("Command Palette…"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+P")) },
         [this] { showCommandPalette(); });
-    add(QStringLiteral("prefs"), tr("Preferencias…"),
+    add(QStringLiteral("prefs"), tr("Preferences…"),
         { QKeySequence(QStringLiteral("Ctrl+,")) }, [this] { showPreferences(); });
-    add(QStringLiteral("quit"), tr("Salir"), { QKeySequence::Quit },
+    add(QStringLiteral("quit"), tr("Quit"), { QKeySequence::Quit },
         [this] { close(); });
 
-    add(QStringLiteral("nextTab"), tr("Pestaña siguiente"),
+    add(QStringLiteral("nextTab"), tr("Next tab"),
         { QKeySequence(QStringLiteral("Ctrl+Tab")) }, [this] { nextTab(1); });
-    add(QStringLiteral("prevTab"), tr("Pestaña anterior"),
+    add(QStringLiteral("prevTab"), tr("Previous tab"),
         { QKeySequence(QStringLiteral("Ctrl+Shift+Tab")) }, [this] { nextTab(-1); });
 
-    add(QStringLiteral("about"), tr("Acerca de QTerm2"), {}, [this] { showAbout(); });
-    add(QStringLiteral("shortcuts"), tr("Atajos de teclado"), {}, [this] { showShortcuts(); });
+    add(QStringLiteral("about"), tr("About QTerm2"), {}, [this] { showAbout(); });
+    add(QStringLiteral("shortcuts"), tr("Keyboard shortcuts"), {}, [this] { showShortcuts(); });
 
     // Ctrl+1..9 selects a tab directly.
     for (int i = 1; i <= 9; ++i) {
@@ -706,14 +748,14 @@ void MainWindow::buildActions()
 
 void MainWindow::buildMenus()
 {
-    auto *fileMenu = menuBar()->addMenu(tr("&Archivo"));
-    fileMenu->addSeparator();
+    menuBar()->clear();
+    auto *fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(m_actions.value(QStringLiteral("closePane")));
     fileMenu->addAction(m_actions.value(QStringLiteral("closeTab")));
     fileMenu->addSeparator();
     fileMenu->addAction(m_actions.value(QStringLiteral("quit")));
 
-    auto *editMenu = menuBar()->addMenu(tr("&Editar"));
+    auto *editMenu = menuBar()->addMenu(tr("&Edit"));
     editMenu->addAction(m_actions.value(QStringLiteral("copy")));
     editMenu->addAction(m_actions.value(QStringLiteral("paste")));
     editMenu->addAction(m_actions.value(QStringLiteral("selectAll")));
@@ -722,9 +764,23 @@ void MainWindow::buildMenus()
     editMenu->addAction(m_actions.value(QStringLiteral("globalSearch")));
     editMenu->addSeparator();
     editMenu->addAction(m_actions.value(QStringLiteral("commandPalette")));
+    editMenu->addAction(tr("Network Discovery..."), this, &MainWindow::showNetworkDiscovery);
+    editMenu->addAction(tr("Server Monitoring..."), this, &MainWindow::showServerMonitor);
+    auto *langMenu = editMenu->addMenu(tr("Language"));
+    langMenu->addAction(tr("English"));
+    langMenu->addAction(tr("Spanish"));
     editMenu->addAction(m_actions.value(QStringLiteral("prefs")));
 
-    m_sessionsMenu = menuBar()->addMenu(tr("&Sesiones"));
+    auto *viewMenu = menuBar()->addMenu(tr("&View"));
+    viewMenu->addAction(m_toggleSidebarAction);
+    viewMenu->addAction(m_darkThemeAction);
+    viewMenu->addSeparator();
+    viewMenu->addAction(m_actions.value(QStringLiteral("nextTab")));
+    viewMenu->addAction(m_actions.value(QStringLiteral("prevTab")));
+    viewMenu->addSeparator();
+    viewMenu->addAction(m_actions.value(QStringLiteral("fullscreen")));
+
+    m_sessionsMenu = menuBar()->addMenu(tr("&Sessions"));
     updateSessionsMenu();
 
     auto *terminalMenu = menuBar()->addMenu(tr("&Terminal"));
@@ -738,30 +794,14 @@ void MainWindow::buildMenus()
     terminalMenu->addAction(m_actions.value(QStringLiteral("zoomOut")));
     terminalMenu->addAction(m_actions.value(QStringLiteral("zoomReset")));
 
-    auto *viewMenu = menuBar()->addMenu(tr("&Ver"));
-    viewMenu->addAction(m_toggleSidebarAction);
-    viewMenu->addAction(m_darkThemeAction);
-    viewMenu->addSeparator();
-    viewMenu->addAction(m_actions.value(QStringLiteral("nextTab")));
-    viewMenu->addAction(m_actions.value(QStringLiteral("prevTab")));
-    viewMenu->addSeparator();
-    viewMenu->addAction(m_actions.value(QStringLiteral("fullscreen")));
-
-    auto *toolsMenu = menuBar()->addMenu(tr("&Herramientas"));
-    toolsMenu->addAction(tr("Túneles..."));
-    connect(toolsMenu->actions().last(), &QAction::triggered, this, &MainWindow::showTunnels);
-    toolsMenu->addSeparator();
-    toolsMenu->addAction(tr("Plugins..."));
-    connect(toolsMenu->actions().last(), &QAction::triggered, this, &MainWindow::showPlugins);
-
-    auto *helpMenu = menuBar()->addMenu(tr("A&yuda"));
+    auto *helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->addAction(m_actions.value(QStringLiteral("shortcuts")));
     helpMenu->addAction(m_actions.value(QStringLiteral("about")));
 }
 
 void MainWindow::buildToolbar()
 {
-    auto *toolbar = addToolBar(tr("Principal"));
+    auto *toolbar = addToolBar(tr("Main"));
     toolbar->setObjectName(QStringLiteral("MainToolBar"));
     toolbar->setMovable(false);
     toolbar->setFloatable(false);
@@ -769,10 +809,6 @@ void MainWindow::buildToolbar()
     toolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
 
     toolbar->addWidget(toolbarButton(m_toggleSidebarAction, QStringLiteral("\u2630"), toolbar));
-    toolbar->addWidget(toolbarButton(m_actions.value(QStringLiteral("newLocal")),
-                                     QStringLiteral("+"), toolbar));
-    toolbar->addWidget(toolbarButton(m_actions.value(QStringLiteral("newSsh")),
-                                     QStringLiteral("SSH"), toolbar));
     toolbar->addSeparator();
     toolbar->addWidget(toolbarButton(m_actions.value(QStringLiteral("splitRight")),
                                      QStringLiteral("\u25eb"), toolbar));
@@ -845,7 +881,7 @@ void MainWindow::adjustFontSize(int delta)
     m_fontSize = value;
     m_settings->setValue(QStringLiteral("terminal/fontSize"), m_fontSize);
     applyTerminalAppearance();
-    statusBar()->showMessage(tr("Tamaño de fuente: %1 pt").arg(m_fontSize), 1400);
+    statusBar()->showMessage(tr("Font size: %1 pt").arg(m_fontSize), 1400);
 }
 
 void MainWindow::resetFontSize()
@@ -853,7 +889,7 @@ void MainWindow::resetFontSize()
     m_fontSize = 11;
     m_settings->setValue(QStringLiteral("terminal/fontSize"), m_fontSize);
     applyTerminalAppearance();
-    statusBar()->showMessage(tr("Tamaño de fuente restaurado"), 1400);
+    statusBar()->showMessage(tr("Font size restored"), 1400);
 }
 
 void MainWindow::showPreferences()
@@ -874,12 +910,12 @@ void MainWindow::showPreferences()
     if (!lang.isEmpty()) {
         m_settings->setValue(QStringLiteral("ui/language"), lang);
         // Language switching requires restart in this setup; notify user
-        statusBar()->showMessage(tr("Idioma guardado (%1). Reinicia la aplicación para aplicarlo.").arg(lang), 3000);
+        statusBar()->showMessage(tr("Language saved (%1). Restart to apply.").arg(lang), 3000);
     }
 
     saveSettings();
     applyTheme();
-    statusBar()->showMessage(tr("Preferencias guardadas"), 2200);
+    statusBar()->showMessage(tr("Preferences saved"), 2200);
 }
 
 // --------------------------------------------------------------- navigation
@@ -917,7 +953,7 @@ void MainWindow::closeTabAt(int index, bool confirm)
 
     if (confirm && pane->anyRunning()) {
         const auto answer = QMessageBox::question(
-            this, tr("Cerrar sesión"),
+            this, tr("Close session"),
             tr("«%1» todavía tiene un proceso en ejecución.\n¿Cerrar de todos modos?")
                 .arg(pane->sessionName()),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
@@ -941,7 +977,7 @@ void MainWindow::closeCurrentPane()
     if (pane->terminals().size() > 1) {
         if (pane->anyRunning() && activeTerminal() && activeTerminal()->isRunning()) {
             const auto answer = QMessageBox::question(
-                this, tr("Cerrar panel"),
+                this, tr("Close pane"),
                 tr("Este panel tiene un proceso en ejecución.\n¿Cerrarlo?"),
                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
             if (answer != QMessageBox::Yes)
@@ -973,7 +1009,7 @@ void MainWindow::splitActive(Qt::Orientation orientation)
 void MainWindow::newLocalTab()
 {
     Session local = Session::makeLocal();
-    local.name = tr("Terminal local");
+    local.name = tr("Local terminal");
     local.shell = m_localShell;
     local.startDir = QDir::homePath();
     local.colorTag = QStringLiteral("green");
@@ -990,7 +1026,7 @@ TerminalPane *MainWindow::addSessionTab(const Session &session)
     QString error;
     if (!pane->start(&error)) {
         delete pane;
-        QMessageBox::warning(this, tr("No se pudo abrir la sesión"), error);
+        QMessageBox::warning(this, tr("Could not open session"), error);
         return nullptr;
     }
 
@@ -1047,7 +1083,7 @@ void MainWindow::wirePane(TerminalPane *pane)
     });
     connect(pane, &TerminalPane::terminalFinished, this, [this, pane](TerminalWidget *terminal) {
         if (currentPane() == pane) {
-            statusBar()->showMessage(tr("El proceso terminó. La pestaña sigue abierta."), 4000);
+            statusBar()->showMessage(tr("Process exited. Tab remains open."), 4000);
             updateStatus();
         }
         refreshTabInfo(pane);
@@ -1099,7 +1135,7 @@ void MainWindow::scheduleReconnect(TerminalPane *pane, TerminalWidget *terminal)
 
             QString error;
             if (!pane->restartTerminal(terminal, &error)) {
-                statusBar()->showMessage(tr("Reconexión fallida: %1").arg(error), 5000);
+                statusBar()->showMessage(tr("Reconnection failed: %1").arg(error), 5000);
                 scheduleReconnect(pane, terminal);
                 return;
             }
@@ -1125,7 +1161,7 @@ void MainWindow::scheduleReconnect(TerminalPane *pane, TerminalWidget *terminal)
 
     timer->start(delaySeconds * 1000);
     statusBar()->showMessage(
-        tr("Conexión perdida. Reintentando en %1 s (intento %2/%3)…")
+        tr("Connection lost. Retrying in %1 s (attempt %2/%3)…")
             .arg(delaySeconds)
             .arg(attempt)
             .arg(kMaxReconnectAttempts),
@@ -1171,7 +1207,7 @@ void MainWindow::updateSessionsMenu()
     m_sessionsMenu->addSeparator();
 
     if (!m_store || m_store->sessions().isEmpty()) {
-        QAction *empty = m_sessionsMenu->addAction(tr("No hay sesiones guardadas"));
+        QAction *empty = m_sessionsMenu->addAction(tr("No saved sessions"));
         empty->setEnabled(false);
         return;
     }
@@ -1197,10 +1233,7 @@ void MainWindow::updateSessionsMenu()
         }
     }
 
-    m_sessionsMenu->addSeparator();
-    m_sessionsMenu->addAction(tr("Editar sesiones en el panel"), this, [this] {
-        setSidebarVisible(true);
-    });
+
 }
 
 void MainWindow::connectSession(const QString &id)
@@ -1383,7 +1416,7 @@ void MainWindow::importSshConfig()
 {
     const QString defaultPath = QDir::home().filePath(QStringLiteral(".ssh/config"));
     const QString path = QFileDialog::getOpenFileName(
-        this, tr("Importar configuración SSH"), defaultPath,
+        this, tr("Import SSH config"), defaultPath,
         tr("Configuración SSH (*);;Todos los archivos (*)"));
     if (path.isEmpty())
         return;
@@ -1459,13 +1492,13 @@ void MainWindow::exportSshConfig()
 
     const QString defaultPath = QDir::home().filePath(QStringLiteral(".ssh/config"));
     const QString path = QFileDialog::getSaveFileName(
-        this, tr("Exportar configuración SSH"), defaultPath,
+        this, tr("Export SSH config"), defaultPath,
         tr("Configuración SSH (*);;Todos los archivos (*)"));
     if (path.isEmpty())
         return;
 
     const auto answer = QMessageBox::question(
-        this, tr("Exportar configuración SSH"),
+        this, tr("Export SSH config"),
         tr("Se escribirán %1 sesiones dentro del bloque gestionado por QTerm2 "
            "en:\n%2\n\nEl contenido que ya exista fuera del bloque se conserva y "
            "se crea una copia de seguridad del archivo.\n\n¿Continuar?")
@@ -1726,7 +1759,7 @@ void MainWindow::updateStatus()
     }
     const Session &s = pane->session();
     QString left = s.name + QStringLiteral("  ·  ")
-                   + (s.isLocal() ? tr("Terminal local") : s.displayTarget());
+                   + (s.isLocal() ? tr("Local terminal") : s.displayTarget());
     if (!s.isLocal()) {
         left += QStringLiteral("  ·  ") + Session::authName(s.auth);
     }
@@ -1793,7 +1826,7 @@ bool MainWindow::findInTerminal(bool forward)
 void MainWindow::showAbout()
 {
     QMessageBox::about(
-        this, tr("Acerca de QTerm2"),
+        this, tr("About QTerm2"),
         tr("<h3>QTerm2 v1.0</h3>"
            "<p>Un terminal para Linux inspirado en iTerm2, con gestor de "
            "sesiones SSH integrado.</p>"
@@ -1806,7 +1839,7 @@ void MainWindow::showAbout()
 void MainWindow::showShortcuts()
 {
     QMessageBox::information(
-        this, tr("Atajos de teclado"),
+        this, tr("Keyboard shortcuts"),
         tr("<b>Pestañas y paneles</b><br>"
            "Ctrl+T · nueva terminal local<br>"
            "Ctrl+Shift+N · nueva conexión SSH<br>"
@@ -1850,3 +1883,20 @@ void MainWindow::showPlugins()
            "<p>Capacidades: comandos, paneles, temas, backends. Sistema de permisos integrado.</p>"
            "<p>Plugin Docker/Kubernetes disponible con comandos en la paleta de comandos (Ctrl+Shift+P).</p>"));
 }
+
+#include "ui/networkdiscoverydialog.h"
+#include "ui/servermonitor.h"
+
+void MainWindow::showNetworkDiscovery()
+{
+    NetworkDiscoveryDialog dlg(this);
+    dlg.exec();
+}
+
+void MainWindow::showServerMonitor()
+{
+    ServerMonitor dlg(this);
+    dlg.exec();
+}
+
+

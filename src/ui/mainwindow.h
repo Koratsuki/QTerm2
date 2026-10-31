@@ -65,6 +65,8 @@ private:
     void showKnownHosts();
     void showSshAgent();
     void showSnippets();
+    void showNetworkDiscovery();
+    void showServerMonitor();
     void showCommandPalette();
     void showGlobalSearch();
     void updateSessionsMenu();

@@ -42,8 +42,8 @@ SshConfigDialog::SshConfigDialog(const QVector<SshConfigEntry> &entries,
 
     m_table = new QTableWidget(0, 7, this);
     m_table->setObjectName(QStringLiteral("SshConfigTable"));
-    m_table->setHorizontalHeaderLabels({ QString(), tr("Alias"), tr("Servidor"),
-                                         tr("Usuario"), tr("Puerto"), tr("Llave"),
+    m_table->setHorizontalHeaderLabels({ QString(), tr("Alias"), tr("Host"),
+                                         tr("User"), tr("Port"), tr("Llave"),
                                          tr("Origen") });
     m_table->verticalHeader()->setVisible(false);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -95,7 +95,7 @@ SshConfigDialog::SshConfigDialog(const QVector<SshConfigEntry> &entries,
     m_table->resizeRowsToContents();
 
     auto *buttons = new QHBoxLayout;
-    auto *selectAll = new QPushButton(tr("Seleccionar todo"), this);
+    auto *selectAll = new QPushButton(tr("Select All"), this);
     auto *selectNone = new QPushButton(tr("Seleccionar nada"), this);
     selectAll->setObjectName(QStringLiteral("SelectAllHosts"));
     selectNone->setObjectName(QStringLiteral("SelectNoHosts"));

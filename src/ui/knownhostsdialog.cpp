@@ -43,7 +43,7 @@ KnownHostsDialog::KnownHostsDialog(const QString &path, QWidget *parent)
 
     m_table = new QTableWidget(0, 5, this);
     m_table->setObjectName(QStringLiteral("KnownHostsTable"));
-    m_table->setHorizontalHeaderLabels({ tr("Línea"), tr("Hosts"), tr("Tipo"),
+    m_table->setHorizontalHeaderLabels({ tr("Línea"), tr("Hosts"), tr("Type"),
                                          tr("Clave"), tr("Comentario") });
     m_table->verticalHeader()->setVisible(false);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);

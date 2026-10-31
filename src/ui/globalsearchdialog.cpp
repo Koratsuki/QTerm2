@@ -18,7 +18,7 @@ GlobalSearchDialog::GlobalSearchDialog(const QVector<GlobalSearchTarget> &target
     : QDialog(parent)
     , m_targets(targets)
 {
-    setWindowTitle(tr("Buscar en todas las pestañas"));
+    setWindowTitle(tr("Find in all tabs"));
     resize(760, 480);
 
     auto *layout = new QVBoxLayout(this);
