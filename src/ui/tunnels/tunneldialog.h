@@ -1,30 +1,42 @@
 #pragma once
 
 #include <QDialog>
-#include <QTableView>
-#include <QPushButton>
 
-namespace qterm2 {
+#include "tunnels/tunnelmanager.h"
 
-class TunnelManager;
+class QCheckBox;
+class QComboBox;
+class QLineEdit;
+class QPushButton;
+class QSpinBox;
+class QTableWidget;
+
+namespace qterm2 { class SessionStore; }
 
 class TunnelDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit TunnelDialog(TunnelManager *manager, QWidget *parent = nullptr);
+    explicit TunnelDialog(qterm2::TunnelManager *manager,
+                          qterm2::SessionStore *sessions,
+                          QWidget *parent = nullptr);
 
 private slots:
-    void addTunnel();
-    void startTunnel();
-    void stopTunnel();
+    void refreshTable();
+    void addFromSession();
+    void addManual();
+    void editSelected();
+    void startSelected();
+    void stopSelected();
+    void removeSelected();
+    void toggleAutoReconnectSelected();
+    void showLog();
 
 private:
-    TunnelManager *m_manager;
-    QTableView *m_table;
-    QPushButton *m_addBtn;
-    QPushButton *m_startBtn;
-    QPushButton *m_stopBtn;
-};
+    QString selectedTunnelId() const;
 
-} // namespace qterm2
+    qterm2::TunnelManager *manager() const { return m_manager; }
+    qterm2::TunnelManager *m_manager = nullptr;
+    qterm2::SessionStore *m_sessions = nullptr;
+    QTableWidget *m_table = nullptr;
+};

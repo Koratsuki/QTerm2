@@ -11,6 +11,9 @@
 #include "storage/sqlitesessionrepository.h"
 #include "storage/sqlitesnippetrepository.h"
 
+#include <QApplication>
+#include <QMessageBox>
+
 namespace qterm2 {
 
 ApplicationContext::ApplicationContext(const AppPaths &paths, QObject *parent)
@@ -51,7 +54,6 @@ bool ApplicationContext::initialize(QString *errorMessage)
     }
 
     m_repository = std::make_unique<SqliteSessionRepository>(m_database.get());
-    m_repository->clearRecentSessions();
 
     const Status migration =
         importLegacyData(m_paths, *m_repository, *m_settings);
@@ -100,8 +102,37 @@ bool ApplicationContext::hasPermission(const QString &pluginId, PluginPermission
 
 void ApplicationContext::requestPermission(const QString &pluginId, PluginPermission permission)
 {
-    if (m_pluginPerms)
-        m_pluginPerms->grant(pluginId, permission);
+    if (!m_pluginPerms || permission == PluginPermission::None)
+        return;
+    if (m_pluginPerms->hasPermission(pluginId, permission))
+        return;
+
+    // Native plugins are trusted code, but granting capabilities is now an
+    // explicit, persisted user decision instead of a silent auto-grant.
+    // In non-interactive contexts (tests, headless runs) do not prompt: deny.
+    QWidget *parent = QApplication::activeWindow();
+    if (!qobject_cast<QApplication *>(QCoreApplication::instance())) {
+        return;
+    }
+    const QString platform = QGuiApplication::platformName();
+    if (platform == QLatin1String("offscreen") || platform == QLatin1String("minimal")) {
+        return;
+    }
+
+    const QString permName = pluginPermissionToString(permission);
+    const auto answer = QMessageBox::question(
+        parent,
+        QObject::tr("Permiso de plugin"),
+        QObject::tr("El plugin «%1» solicita el permiso «%2».\n\n¿Concederlo?")
+            .arg(pluginId, permName),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+    if (answer != QMessageBox::Yes)
+        return;
+
+    m_pluginPerms->grant(pluginId, permission);
+    if (m_settings)
+        m_pluginPerms->saveToSettings(m_settings.get());
 }
 
 } // namespace qterm2

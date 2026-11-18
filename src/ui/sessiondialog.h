@@ -18,12 +18,17 @@ class QTabWidget;
 class QTableWidget;
 class QWidget;
 
+namespace Ui {
+class SessionDialog;
+}
+
 class SessionDialog : public QDialog
 {
     Q_OBJECT
 public:
     explicit SessionDialog(const Session &session, const QStringList &groups,
                            QWidget *parent = nullptr);
+    ~SessionDialog() override;
 
     Session resultSession() const { return m_result; }
 
@@ -50,6 +55,8 @@ private:
     void updateAuthUi();
     bool validate();
     QString expandedKeyPath() const;
+
+    Ui::SessionDialog *ui = nullptr;
 
     Session m_session;
     Session m_result;

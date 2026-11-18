@@ -11,6 +11,10 @@
 #include <QFile>
 #include <QCoreApplication>
 
+#ifndef _WIN32
+#include <csignal>
+#endif
+
 #include "app/applicationcontext.h"
 #include "storage/settingsstore.h"
 #include "ui/mainwindow.h"
@@ -55,12 +59,22 @@ QIcon makeAppIcon()
 
 int main(int argc, char *argv[])
 {
+#ifndef _WIN32
+    // A remote process closing its PTY side must never terminate QTerm2.
+    // Configure this process-wide once, instead of from a PtyProcess constructor.
+    struct sigaction ignorePipe {};
+    ignorePipe.sa_handler = SIG_IGN;
+    sigemptyset(&ignorePipe.sa_mask);
+    ignorePipe.sa_flags = 0;
+    sigaction(SIGPIPE, &ignorePipe, nullptr);
+#endif
+
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("QTerm2"));
     QApplication::setApplicationDisplayName(QStringLiteral("QTerm2"));
     QApplication::setOrganizationName(QStringLiteral("QTerm2"));
     QApplication::setOrganizationDomain(QStringLiteral("qterm2.local"));
-    QApplication::setApplicationVersion(QStringLiteral("1.0.0"));
+    QApplication::setApplicationVersion(QStringLiteral("1.1.1"));
     QApplication::setDesktopFileName(QStringLiteral("QTerm2"));
 
     QApplication::setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
@@ -78,9 +92,12 @@ int main(int argc, char *argv[])
         QString lang = QLocale::system().name().left(2);
         if (context.settings())
             lang = context.settings()->value(QStringLiteral("ui/language"), lang).toString();
-        // Default to English if not Spanish
+        // Default to English if not Spanish.  Store the effective language so
+        // PreferencesDialog can show the real current value on reopen.
         if (lang != QStringLiteral("es"))
             lang = QStringLiteral("en");
+        if (context.settings())
+            context.settings()->setValue(QStringLiteral("ui/language"), lang);
         static QTranslator translator;
         bool loaded = false;
         if (lang == QStringLiteral("en")) {
@@ -92,7 +109,6 @@ int main(int argc, char *argv[])
                     QCoreApplication::applicationDirPath() + QStringLiteral("/translations/qterm2_en.qm"),
                     QCoreApplication::applicationDirPath() + QStringLiteral("/../translations/qterm2_en.qm"),
                     QCoreApplication::applicationDirPath() + QStringLiteral("/../share/qterm2/translations/qterm2_en.qm"),
-                    QStringLiteral("/home/koratsuki/Desktop/QTerm2/translations/qterm2_en.qm"),
                 };
                 for (const auto &c : candidates) {
                     if (QFile::exists(c) && translator.load(c)) { loaded = true; break; }
@@ -110,10 +126,6 @@ int main(int argc, char *argv[])
 
     app.setWindowIcon(makeAppIcon());
 
-    // Application lock disabled for now
-    // #include "ui/applockdialog.h"
-    // if (!AppLockDialog::unlock(nullptr))
-    //     return 0;
     MainWindow window(&context);
     window.show();
 

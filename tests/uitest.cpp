@@ -51,13 +51,20 @@ namespace {
 
 int g_failures = 0;
 
+void emitFailure(const char *what)
+{
+    std::printf("  FAIL %s\n", what);
+    if (qEnvironmentVariableIsSet("GITHUB_ACTIONS"))
+        std::printf("::error::[uitest] %s\n", what);
+    ++g_failures;
+}
+
 void check(bool condition, const char *what)
 {
     if (condition) {
         std::printf("  ok   %s\n", what);
     } else {
-        std::printf("  FAIL %s\n", what);
-        ++g_failures;
+        emitFailure(what);
     }
 }
 
@@ -66,9 +73,12 @@ void checkEqual(const QString &actual, const QString &expected, const char *what
     if (actual == expected) {
         std::printf("  ok   %s\n", what);
     } else {
-        std::printf("  FAIL %s\n       expected: %s\n       actual:   %s\n",
-                    what, qPrintable(expected), qPrintable(actual));
-        ++g_failures;
+        emitFailure(what);
+        std::printf("       expected: %s\n       actual:   %s\n",
+                    qPrintable(expected), qPrintable(actual));
+        if (qEnvironmentVariableIsSet("GITHUB_ACTIONS"))
+            std::printf("::error::  expected: %s; actual: %s\n",
+                        qPrintable(expected), qPrintable(actual));
     }
 }
 
@@ -146,8 +156,8 @@ int main(int argc, char *argv[])
             }
             return -1;
         };
-        const int favoritesIndex = groupIndex(QStringLiteral("Favorites"));
-        const int recentsIndex = groupIndex(QStringLiteral("Recents"));
+        const int favoritesIndex = groupIndex(QStringLiteral("Favoritos"));
+        const int recentsIndex = groupIndex(QStringLiteral("Recientes"));
         const int localsIndex = groupIndex(QStringLiteral("Locales"));
         check(favoritesIndex >= 0, "favorites group is shown");
         check(recentsIndex >= 0, "recent group is shown");
@@ -506,8 +516,10 @@ int main(int argc, char *argv[])
         check(table && table->rowCount() == 1, "agent identity reaches the dialog");
         check(socket && socket->text() == status.socketPath,
               "agent socket is displayed");
-        check(state && state->text().contains(QStringLiteral("1 identidades")),
-              "agent state is displayed");
+        // No translator is installed in the test binary, so tr() returns the
+        // source string.
+        check(state && state->text() == QStringLiteral("Agente disponible · 1 identidades."),
+              "agent state is displayed with the identity count");
         check(refresh != nullptr, "agent dialog can refresh");
     }
 

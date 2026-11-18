@@ -1,6 +1,7 @@
 #include "storage/database.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -57,11 +58,29 @@ bool Database::open(QString *errorMessage)
     }
 
     m_open = true;
+
+    // The parent directory is 0700, but chmod the files as well so a copied or
+    // relocated tree cannot leak hosts, usernames or key paths.
+    const QFileDevice::Permissions ownerOnly =
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner;
+    QFile::setPermissions(m_path, ownerOnly);
+
     if (!exec(QStringLiteral("PRAGMA foreign_keys = ON"), errorMessage)
         || !exec(QStringLiteral("PRAGMA journal_mode = WAL"), errorMessage)
         || !exec(QStringLiteral("PRAGMA synchronous = NORMAL"), errorMessage)
-        || !exec(QStringLiteral("PRAGMA busy_timeout = 5000"), errorMessage)
-        || !migrate(errorMessage)) {
+        || !exec(QStringLiteral("PRAGMA busy_timeout = 5000"), errorMessage)) {
+        db.close();
+        QSqlDatabase::removeDatabase(m_connectionName);
+        m_connectionName.clear();
+        m_open = false;
+        return false;
+    }
+
+    // WAL creates two sidecar files on first write; they carry the same data.
+    QFile::setPermissions(m_path + QStringLiteral("-wal"), ownerOnly);
+    QFile::setPermissions(m_path + QStringLiteral("-shm"), ownerOnly);
+
+    if (!migrate(errorMessage)) {
         db.close();
         QSqlDatabase::removeDatabase(m_connectionName);
         m_connectionName.clear();

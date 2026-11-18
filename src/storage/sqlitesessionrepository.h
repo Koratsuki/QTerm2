@@ -18,6 +18,10 @@ public:
     bool clearRecentSessions(QString *errorMessage = nullptr) override;
     int count(QString *errorMessage = nullptr) const override;
 
+    bool beginTransaction(QString *errorMessage = nullptr) override;
+    bool commitTransaction(QString *errorMessage = nullptr) override;
+    bool rollbackTransaction() override;
+
 private:
     bool ensureGroup(const QString &name, QString *errorMessage);
     Database *m_database = nullptr;

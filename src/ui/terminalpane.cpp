@@ -42,7 +42,7 @@ public:
 
         m_closeButton = new QToolButton(this);
         m_closeButton->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
-        m_closeButton->setToolTip(tr("Close split pane"));
+        m_closeButton->setToolTip(tr("Cerrar panel dividido"));
         m_closeButton->setAutoRaise(true);
         m_closeButton->setFixedSize(20, 20);
         headerLayout->addWidget(m_closeButton);
@@ -136,6 +136,7 @@ void TerminalPane::attachTerminal(TerminalWidget *terminal)
         emit bellRang(terminal);
     });
     terminal->installEventFilter(this);
+    emit terminalAdded(terminal);
     updateHeaders();
 }
 
@@ -324,6 +325,8 @@ void TerminalPane::removeTerminal(TerminalWidget *terminal)
 
     m_terminals.removeAll(terminal);
     PaneWrapper *wrapper = m_wrappers.take(terminal);
+    if (!wrapper) // already removed (e.g. a duplicate terminalFinished signal)
+        return;
     QSplitter *parent = qobject_cast<QSplitter *>(wrapper->parentWidget());
     wrapper->setParent(nullptr);
     wrapper->deleteLater();

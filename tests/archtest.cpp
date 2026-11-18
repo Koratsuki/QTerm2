@@ -6,8 +6,10 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QSettings>
+#include <QSet>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QTemporaryDir>
@@ -20,6 +22,7 @@
 #include "domain/snippet.h"
 #include "plugins/pluginmanager.h"
 #include "security/credentialstore.h"
+#include "security/crypto.h"
 #include "sessions/sessionlauncher.h"
 #include "sessions/snippetstore.h"
 #include "ssh/keymanager.h"
@@ -33,6 +36,7 @@
 #include "storage/settingsstore.h"
 #include "storage/sqlitesessionrepository.h"
 #include "storage/sqlitesnippetrepository.h"
+#include "storage/syncmanager.h"
 #include "terminal/terminalemulator.h"
 
 #include <cstdio>
@@ -41,13 +45,20 @@ namespace {
 
 int g_failures = 0;
 
+void emitFailure(const char *what)
+{
+    std::printf("  FAIL %s\n", what);
+    if (qEnvironmentVariableIsSet("GITHUB_ACTIONS"))
+        std::printf("::error::[archtest] %s\n", what);
+    ++g_failures;
+}
+
 void check(bool condition, const char *what)
 {
     if (condition) {
         std::printf("  ok   %s\n", what);
     } else {
-        std::printf("  FAIL %s\n", what);
-        ++g_failures;
+        emitFailure(what);
     }
 }
 
@@ -56,9 +67,12 @@ void checkEqual(const QString &actual, const QString &expected, const char *what
     if (actual == expected) {
         std::printf("  ok   %s\n", what);
     } else {
-        std::printf("  FAIL %s\n       expected: %s\n       actual:   %s\n",
-                    what, qPrintable(expected), qPrintable(actual));
-        ++g_failures;
+        emitFailure(what);
+        std::printf("       expected: %s\n       actual:   %s\n",
+                    qPrintable(expected), qPrintable(actual));
+        if (qEnvironmentVariableIsSet("GITHUB_ACTIONS"))
+            std::printf("::error::  expected: %s; actual: %s\n",
+                        qPrintable(expected), qPrintable(actual));
     }
 }
 
@@ -146,6 +160,81 @@ void testSshCommandBuilder()
     check(dIndex >= 0 && dIndex + 1 < forwardSpec.args.size() &&
               forwardSpec.args.at(dIndex + 1) == QStringLiteral("127.0.0.1:1080"),
           "dynamic forwarding rule is rendered");
+}
+
+void testArgumentInjection()
+{
+    std::printf("argument injection defenses\n");
+
+    Session hostile = makeSsh();
+    hostile.host = QStringLiteral("-oProxyCommand=touch /tmp/Q2_PWNED");
+    check(!qterm2::ssh::buildConnectSpec(hostile).ok,
+          "host starting with '-' is rejected before building ssh argv");
+
+    Session hostileUser = makeSsh();
+    hostileUser.user = QStringLiteral("-F/tmp/evil");
+    check(!qterm2::ssh::buildConnectSpec(hostileUser).ok,
+          "user starting with '-' is rejected");
+
+    Session hostileProxy = makeSsh();
+    hostileProxy.proxyJump = QStringLiteral("-oProxyCommand=id");
+    check(!qterm2::ssh::buildConnectSpec(hostileProxy).ok,
+          "ProxyJump starting with '-' is rejected");
+
+    const qterm2::ProcessSpec safeSpec = qterm2::ssh::buildConnectSpec(makeSsh());
+    const int sep = safeSpec.args.indexOf(QStringLiteral("--"));
+    check(sep >= 0 && sep + 1 < safeSpec.args.size()
+              && safeSpec.args.at(sep + 1) == QStringLiteral("alice@example.com"),
+          "-- terminates options right before the destination");
+
+    check(!qterm2::ssh::buildInstallKeySpec(hostile).ok,
+          "ssh-copy-id rejects a hostile destination too");
+
+    // Sessions read from an untrusted file must be sanitised at the boundary.
+    QJsonObject obj;
+    obj[QStringLiteral("host")] = QStringLiteral("-oProxyCommand=touch /tmp/Q2_PWNED");
+    obj[QStringLiteral("user")] = QStringLiteral("-lroot");
+    obj[QStringLiteral("extraArgs")] = QStringLiteral("-oProxyCommand=id dummy");
+    obj[QStringLiteral("port")] = 99999;
+    const Session cleaned = Session::fromJson(obj);
+    check(cleaned.host.isEmpty(), "import clears a hostile host");
+    check(cleaned.user.isEmpty(), "import clears a hostile user");
+    check(cleaned.extraArgs.isEmpty(), "import clears option-like extraArgs");
+    check(cleaned.port == 22, "import clamps an out-of-range port");
+
+    // Rendering ~/.ssh/config must not let a value forge a new directive.
+    Session configSession = makeSsh();
+    configSession.host =
+        QStringLiteral("example.com\nProxyCommand touch /tmp/Q2_PWNED");
+    const QString block = qterm2::ssh::renderSshConfig({ configSession });
+    check(!block.contains(QStringLiteral("ProxyCommand")),
+          "a newline in host cannot forge a ProxyCommand directive");
+
+    configSession.host = QStringLiteral("example.com\" ProxyCommand id");
+    const QString quoted = qterm2::ssh::renderSshConfig({ configSession });
+    check(!quoted.contains(QStringLiteral("\nProxyCommand")),
+          "an embedded quote cannot break out of a config token");
+
+    Session telnet = makeSsh();
+    telnet.type = Session::Type::Telnet;
+    telnet.host = QStringLiteral("-l root");
+    check(!qterm2::sessions::SessionLauncher::specFor(telnet).ok,
+          "telnet rejects a hostile host");
+
+    Session safeTelnet = makeSsh();
+    safeTelnet.type = Session::Type::Telnet;
+    safeTelnet.host = QStringLiteral("example.com");
+    safeTelnet.port = 23;
+    const qterm2::ProcessSpec telnetSpec =
+        qterm2::sessions::SessionLauncher::specFor(safeTelnet);
+    check(telnetSpec.ok && telnetSpec.program == QLatin1String("telnet"),
+          "safe telnet session builds a telnet command");
+
+    check(Session::isSafeArgument(QString()), "empty argument is considered safe");
+    check(!Session::isSafeArgument(QStringLiteral("-flag")),
+          "argument starting with '-' is unsafe");
+    check(!Session::isSafeArgument(QStringLiteral("host\nProxyCommand id")),
+          "argument containing a control character is unsafe");
 }
 
 void testSettingsAndDatabase()
@@ -536,10 +625,12 @@ void testSshConfig()
           "managed block is not duplicated");
     check(content.count(QStringLiteral("Host Produccion-web")) == 1,
           "exported host appears once");
-    check((QFile::permissions(managed) & QFile::ReadOwner) != 0,
-          "managed config is readable by the owner");
-    check((QFile::permissions(managed) & QFile::WriteOwner) != 0,
-          "managed config is writable by the owner");
+    const QFile::Permissions configPerms = QFile::permissions(managed);
+    check((configPerms & (QFileDevice::ReadOwner | QFileDevice::WriteOwner))
+                  == (QFileDevice::ReadOwner | QFileDevice::WriteOwner)
+              && !(configPerms & (QFileDevice::ReadGroup | QFileDevice::WriteGroup
+                                  | QFileDevice::ReadOther | QFileDevice::WriteOther)),
+          "managed config is owner-only (0600), as OpenSSH requires");
 }
 
 void testKnownHosts()
@@ -772,12 +863,10 @@ void testTerminalEmulator()
     // Shrinking the main screen must move dropped lines into scrollback.
     emulator.feed("\x1b[?1049l");
     emulator.resize(2, 20);
-    int pushed = 0;
-    for (int i = 0; i < 12; ++i) {
+    const int historyBefore = emulator.historyRows();
+    for (int i = 0; i < 12; ++i)
         emulator.feed("linea\r\n");
-        pushed += emulator.historyRows() > 0 ? 1 : 0;
-    }
-    check(emulator.historyRows() > 0 || pushed == 0, "scrollback grows when needed");
+    check(emulator.historyRows() > historyBefore, "scrollback grows when needed");
 
     emulator.setMaxHistory(3);
     check(emulator.historyRows() <= 3, "scrollback limit is enforced");
@@ -792,6 +881,221 @@ void testTerminalEmulator()
     emulator.clearHistory();
     check(emulator.historyRows() == 0 && emulator.historyBytes() == 0,
           "clearing scrollback resets the byte counter");
+}
+
+void testCryptoAvailability()
+{
+    std::printf("crypto availability\n");
+    const bool available = qterm2::Crypto::isAvailable();
+    QString error;
+    QByteArray out;
+    const bool encrypted = qterm2::Crypto::encrypt("data", "pass", out, &error);
+    check(available == encrypted,
+          "encrypt() succeeds exactly when the OpenSSL backend is available");
+    if (!available)
+        check(out.isEmpty() && !error.isEmpty(),
+              "without OpenSSL, encryption fails with an explicit error (no weak fallback)");
+}
+
+void testCrypto()
+{
+    std::printf("crypto (AES-256-GCM)\n");
+
+    if (!qterm2::Crypto::isAvailable()) {
+        std::printf("  skip OpenSSL is not available in this build\n");
+        return;
+    }
+
+    const QString password = QStringLiteral("contraseña-maestra-ñ");
+    const QByteArray plaintext =
+        QByteArrayLiteral("{\"sessions\":[{\"host\":\"example.com\"}]}");
+
+    QByteArray first;
+    QByteArray second;
+    QString error;
+    check(qterm2::Crypto::encrypt(plaintext, password, first, &error), "plaintext encrypts");
+    if (!error.isEmpty()) {
+        std::printf("       error: %s\n", qPrintable(error));
+        error.clear();
+    }
+    check(first.startsWith(QByteArrayLiteral("Q2SE")), "encrypted blob carries the Q2SE magic");
+    check(first.size() == qterm2::Crypto::kHeaderBytes + plaintext.size()
+                              + qterm2::Crypto::kTagBytes,
+          "encrypted blob has header + body + tag");
+    check(qterm2::Crypto::encrypt(plaintext, password, second, nullptr),
+          "same input encrypts twice");
+    check(first != second, "salt and nonce make every export unique");
+
+    QByteArray decrypted;
+    check(qterm2::Crypto::decrypt(first, password, decrypted, &error), "ciphertext decrypts");
+    checkEqual(QString::fromUtf8(decrypted), QString::fromUtf8(plaintext),
+               "round trip preserves the payload");
+
+    error.clear();
+    check(!qterm2::Crypto::decrypt(first, QStringLiteral("clave-incorrecta"), decrypted, &error),
+          "wrong password is rejected");
+    check(!error.isEmpty(), "wrong password reports an error");
+    check(decrypted.isEmpty(), "failed decryption leaves no partial plaintext");
+
+    error.clear();
+    check(!qterm2::Crypto::decrypt(QByteArrayLiteral("corto"), password, decrypted, &error),
+          "truncated blob is rejected");
+
+    QByteArray tamperedBody = first;
+    tamperedBody[qterm2::Crypto::kHeaderBytes]
+        = static_cast<char>(tamperedBody.at(qterm2::Crypto::kHeaderBytes) ^ 0x01);
+    check(!qterm2::Crypto::decrypt(tamperedBody, password, decrypted, &error),
+          "modified ciphertext fails authentication");
+
+    QByteArray tamperedHeader = first;
+    tamperedHeader[9] = static_cast<char>(tamperedHeader.at(9) ^ 0x01);
+    check(!qterm2::Crypto::decrypt(tamperedHeader, password, decrypted, &error),
+          "modified salt fails authentication");
+
+    QByteArray badMagic = first;
+    badMagic[0] = 'X';
+    check(!qterm2::Crypto::decrypt(badMagic, password, decrypted, &error),
+          "foreign file is rejected by the magic check");
+
+    QByteArray badVersion = first;
+    badVersion[4] = static_cast<char>(2);
+    check(!qterm2::Crypto::decrypt(badVersion, password, decrypted, &error),
+          "unknown format version is rejected");
+
+    QByteArray weakIterations = first;
+    weakIterations[5] = 0;
+    weakIterations[6] = 0;
+    weakIterations[7] = 0;
+    weakIterations[8] = 1;
+    check(!qterm2::Crypto::decrypt(weakIterations, password, decrypted, &error),
+          "iteration count below the minimum is rejected");
+
+    QByteArray empty;
+    check(!qterm2::Crypto::encrypt(plaintext, QString(), empty, &error),
+          "empty password is refused");
+}
+
+void testEncryptedSync()
+{
+    std::printf("encrypted session sync\n");
+
+    if (!qterm2::Crypto::isAvailable()) {
+        std::printf("  skip OpenSSL is not available in this build\n");
+        return;
+    }
+
+    QTemporaryDir dir;
+    const qterm2::AppPaths paths = qterm2::AppPaths::forRoot(dir.path());
+    QString error;
+    qterm2::Database database(paths);
+    check(database.open(&error), "sync database opens");
+
+    qterm2::SqliteSessionRepository repository(&database);
+    Session session = Session::makeLocal(QStringLiteral("Sincronizada"));
+    session.notes = QStringLiteral("nota privada");
+    session.lastUsedAt = QDateTime::currentDateTime();
+    check(repository.upsert(session, &error), "session inserted for export");
+
+    qterm2::SyncManager sync(&repository);
+    const QString exportPath = dir.filePath(QStringLiteral("backup.q2se"));
+    check(sync.exportEncrypted(exportPath, QStringLiteral("clave-fuerte"), &error),
+          "sessions export encrypted");
+    if (!error.isEmpty()) {
+        std::printf("       error: %s\n", qPrintable(error));
+        error.clear();
+    }
+    check(QFile::exists(exportPath), "export file exists");
+    check(sync.isEncrypted(exportPath), "isEncrypted sniffs the real header");
+
+    const QString plainPath = dir.filePath(QStringLiteral("plain.txt"));
+    QFile plain(plainPath);
+    check(plain.open(QIODevice::WriteOnly), "plain file created");
+    plain.write("not an export");
+    plain.close();
+    check(!sync.isEncrypted(plainPath), "plain file is not mistaken for an export");
+    check(!sync.isEncrypted(exportPath + QStringLiteral(".missing")),
+          "missing file is not an export");
+
+#ifdef Q_OS_UNIX
+    const QFile::Permissions exportPerms = QFile::permissions(exportPath);
+    check(!exportPerms.testFlag(QFileDevice::ReadGroup)
+              && !exportPerms.testFlag(QFileDevice::ReadOther)
+              && !exportPerms.testFlag(QFileDevice::WriteOther),
+          "export file is owner-only");
+#endif
+
+    check(repository.remove(session.id, &error), "local session removed before import");
+    check(repository.count() == 0, "repository is empty before import");
+    check(sync.importEncrypted(exportPath, QStringLiteral("clave-fuerte"), &error),
+          "sessions import back");
+    QVector<Session> loaded;
+    check(repository.loadAll(loaded, &error), "imported sessions load");
+    check(loaded.size() == 1, "import restores the session");
+    if (!loaded.isEmpty()) {
+        checkEqual(loaded.first().name, QStringLiteral("Sincronizada"),
+                   "import restores session fields");
+        check(loaded.first().lastUsedAt.isValid(), "import keeps last-used metadata");
+    }
+
+    error.clear();
+    check(!sync.importEncrypted(exportPath, QStringLiteral("clave-mala"), &error),
+          "import with the wrong password fails");
+}
+
+void testRecentSessionsAndPermissions()
+{
+    std::printf("recent sessions and file permissions\n");
+
+    QTemporaryDir dir;
+    const qterm2::AppPaths paths = qterm2::AppPaths::forRoot(dir.path());
+
+    {
+        qterm2::ApplicationContext first(paths);
+        QString error;
+        check(first.initialize(&error), "first context initializes");
+        Session recent = Session::makeLocal(QStringLiteral("Usada hace poco"));
+        recent.lastUsedAt = QDateTime::currentDateTime();
+        check(first.sessionRepository()->upsert(recent, &error),
+              "recent session is stored");
+    }
+
+    {
+        // A restart used to call clearRecentSessions() and wipe last_used_at,
+        // which made the Recents group impossible to fill.
+        qterm2::ApplicationContext second(paths);
+        QString error;
+        check(second.initialize(&error), "second context initializes");
+        QVector<Session> sessions;
+        check(second.sessionRepository()->loadAll(sessions, &error),
+              "sessions reload after restart");
+        bool found = false;
+        for (const Session &s : sessions) {
+            if (s.name == QStringLiteral("Usada hace poco")) {
+                found = true;
+                check(s.lastUsedAt.isValid(),
+                      "last-used timestamp survives an application restart");
+            }
+        }
+        check(found, "recent session survives a restart");
+    }
+
+#ifdef Q_OS_UNIX
+    for (const QString &path : { paths.configDir, paths.dataDir, paths.cacheDir }) {
+        const QFile::Permissions perms = QFile::permissions(path);
+        const bool privateDir = !perms.testFlag(QFileDevice::ReadGroup)
+                                && !perms.testFlag(QFileDevice::WriteGroup)
+                                && !perms.testFlag(QFileDevice::ExeGroup)
+                                && !perms.testFlag(QFileDevice::ReadOther)
+                                && !perms.testFlag(QFileDevice::WriteOther)
+                                && !perms.testFlag(QFileDevice::ExeOther);
+        check(privateDir, qPrintable(QStringLiteral("directory is owner-only: %1").arg(path)));
+    }
+    const QFile::Permissions dbPerms = QFile::permissions(paths.databaseFile);
+    check(!dbPerms.testFlag(QFileDevice::ReadGroup)
+              && !dbPerms.testFlag(QFileDevice::WriteGroup)
+              && !dbPerms.testFlag(QFileDevice::ReadOther),
+          "database file is owner-only");
+#endif
 }
 
 void testApplicationContext()
@@ -813,7 +1117,17 @@ void testApplicationContext()
     check(context.commands() != nullptr, "command registry available");
     check(context.plugins() != nullptr, "plugin manager available");
     check(context.apiVersion() == 2, "plugin API version is 2");
-    check(context.plugins()->searchPaths().size() >= 1, "plugin paths exist");
+    const QStringList pluginPaths = context.plugins()->searchPaths();
+    // Non-existent candidates are normal (loadAll() skips them); what matters
+    // is that the list is usable: present and unique.
+    bool hasAppPluginDir = false;
+    for (const QString &path : pluginPaths) {
+        if (path.endsWith(QLatin1String("/plugins")))
+            hasAppPluginDir = true;
+    }
+    check(hasAppPluginDir, "plugin search paths include the application plugin directory");
+    check(pluginPaths.size() == QSet<QString>(pluginPaths.begin(), pluginPaths.end()).size(),
+          "plugin search paths are unique");
 }
 
 } // namespace
@@ -825,6 +1139,7 @@ int main(int argc, char *argv[])
     QApplication::setOrganizationName(QStringLiteral("QTerm2-archtest"));
 
     testSshCommandBuilder();
+    testArgumentInjection();
     testSettingsAndDatabase();
     testSchemaV1Migration();
     testSessionRepository();
@@ -834,8 +1149,12 @@ int main(int argc, char *argv[])
     testSshAgent();
     testSnippets();
     testCredentials();
+    testCryptoAvailability();
+    testCrypto();
+    testEncryptedSync();
     testCommandRegistry();
     testTerminalEmulator();
+    testRecentSessionsAndPermissions();
     testApplicationContext();
 
     if (g_failures == 0)

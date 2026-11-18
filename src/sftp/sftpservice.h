@@ -17,7 +17,7 @@ enum class FileType {
 struct RemoteFile {
     QString name;
     QString path;
-    FileType type;
+    FileType type = FileType::Unknown;
     qint64 size = 0;
     QDateTime modified;
     QString permissions;
@@ -31,7 +31,8 @@ class SftpService : public QObject
 public:
     explicit SftpService(QObject *parent = nullptr);
 
-    bool connect(const QString &host, int port, const QString &user);
+    bool connect(const QString &host, int port, const QString &user,
+                 const QString &keyFile = QString());
     void disconnect();
     bool isConnected() const;
 
@@ -43,6 +44,8 @@ public:
     bool createDirectory(const QString &path);
     bool rename(const QString &oldPath, const QString &newPath);
 
+    QString lastError() const { return m_lastError; }
+
 signals:
     void connected();
     void disconnected();
@@ -50,7 +53,16 @@ signals:
     void error(const QString &message);
 
 private:
+    QStringList sshBaseArgs() const;
+    QString remoteSpec(const QString &path) const;
+    bool runSsh(const QStringList &remoteCmd, QString *stdOut = nullptr) const;
+
     bool m_connected = false;
+    QString m_host;
+    int m_port = 22;
+    QString m_user;
+    QString m_keyFile;
+    mutable QString m_lastError;
 };
 
 } // namespace qterm2

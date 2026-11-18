@@ -1,12 +1,16 @@
 #include "plugins/pluginpermissions.h"
 #include "storage/settingsstore.h"
 
+#include <QStringList>
+
 namespace qterm2 {
 
 PluginPermissionManager::PluginPermissionManager() = default;
 
 void PluginPermissionManager::grant(const QString &pluginId, PluginPermission permission)
 {
+    if (permission == PluginPermission::None)
+        return;
     const QString perm = pluginPermissionToString(permission);
     auto &list = m_granted[pluginId];
     if (!list.contains(perm))
@@ -15,9 +19,13 @@ void PluginPermissionManager::grant(const QString &pluginId, PluginPermission pe
 
 void PluginPermissionManager::revoke(const QString &pluginId, PluginPermission permission)
 {
+    if (permission == PluginPermission::None)
+        return;
     const QString perm = pluginPermissionToString(permission);
     auto &list = m_granted[pluginId];
     list.removeAll(perm);
+    if (list.isEmpty())
+        m_granted.remove(pluginId);
 }
 
 bool PluginPermissionManager::hasPermission(const QString &pluginId, PluginPermission permission) const
@@ -41,23 +49,38 @@ QStringList PluginPermissionManager::permissionsFor(const QString &pluginId) con
 
 void PluginPermissionManager::loadFromSettings(SettingsStore *settings)
 {
+    m_granted.clear();
     if (!settings)
         return;
-    // SettingsStore doesn't expose all keys; skip for now
+    // Permissions are stored as one string-list value per plugin so they can be
+    // loaded back without enumerating setting keys.  (Legacy per-permission keys
+    // written by earlier builds are not enumerated by SettingsStore.)
+    const QStringList knownIds = settings->value(
+        QStringLiteral("plugins/permission.ids")).toStringList();
+    for (const QString &pluginId : knownIds) {
+        if (pluginId.trimmed().isEmpty())
+            continue;
+        const QStringList perms = settings->value(
+            QStringLiteral("plugins/perms/%1").arg(pluginId)).toStringList();
+        QStringList filtered;
+        for (const QString &perm : perms) {
+            if (!perm.trimmed().isEmpty() && !filtered.contains(perm))
+                filtered.append(perm);
+        }
+        if (!filtered.isEmpty())
+            m_granted.insert(pluginId, filtered);
+    }
 }
 
 void PluginPermissionManager::saveToSettings(SettingsStore *settings) const
 {
     if (!settings)
         return;
-    for (auto it = m_granted.begin(); it != m_granted.end(); ++it) {
-        const QString &pluginId = it.key();
-        const QStringList &perms = it.value();
-        for (const QString &perm : perms) {
-            const QString key = QStringLiteral("plugins/perm/%1/%2").arg(pluginId, perm);
-            settings->setValue(key, perm);
-        }
-    }
+    const QStringList ids = m_granted.keys();
+    settings->setValue(QStringLiteral("plugins/permission.ids"), ids);
+    for (auto it = m_granted.begin(); it != m_granted.end(); ++it)
+        settings->setValue(QStringLiteral("plugins/perms/%1").arg(it.key()),
+                           it.value());
 }
 
 } // namespace qterm2

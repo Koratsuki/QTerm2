@@ -16,6 +16,11 @@ ProcessSpec SessionLauncher::specFor(const Session &session)
 
     if (session.type == Session::Type::Telnet) {
         ProcessSpec spec;
+        if (!Session::isSafeArgument(session.host)
+            || !Session::isSafeArgument(session.user)) {
+            spec.error = QObject::tr("La sesión Telnet contiene un host o usuario no seguro.");
+            return spec;
+        }
         spec.program = QStringLiteral("telnet");
         if (!session.host.isEmpty())
             spec.args << session.host;

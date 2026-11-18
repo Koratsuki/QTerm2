@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QProcess>
 #include <QUuid>
 
 using qterm2::expandHome;
@@ -148,6 +149,70 @@ TerminalProfile TerminalProfile::fromJson(const QJsonObject &obj)
 
 // -------------------------------------------------------------------- session
 
+bool Session::isSafeArgument(const QString &value)
+{
+    if (value.isEmpty())
+        return true;
+    if (value.trimmed().startsWith(QLatin1Char('-')))
+        return false;
+    for (QChar c : value) {
+        // NUL, CR, LF, the rest of C0/C1 and the Unicode line separators would
+        // let an imported value forge a new directive line when rendering
+        // ~/.ssh/config or confuse an external tool's argv parser.
+        const ushort code = c.unicode();
+        if (code < 0x20 || (code >= 0x7f && code <= 0x9f)
+            || code == 0x2028 || code == 0x2029)
+            return false;
+    }
+    return true;
+}
+
+void Session::sanitizeForImport()
+{
+    if (!isSafeArgument(host))
+        host.clear();
+    if (!isSafeArgument(user) || user.contains(QLatin1Char('@'))
+        || user.contains(QLatin1Char(' ')))
+        user.clear();
+    if (!isSafeArgument(proxyJump))
+        proxyJump.clear();
+    if (!isSafeArgument(privateKey))
+        privateKey.clear();
+    if (!isSafeArgument(startDir))
+        startDir.clear();
+    if (!isSafeArgument(shell))
+        shell = defaultShellPath();
+
+    // extraArgs is split into argv and inserted *before* the `--` separator,
+    // so any option-looking token would silently change ssh's behaviour.
+    for (const QString &token : QProcess::splitCommand(extraArgs)) {
+        if (!isSafeArgument(token)) {
+            extraArgs.clear();
+            break;
+        }
+    }
+    // The initial command is passed after the destination, so it cannot become
+    // an ssh option, but control characters must never reach the PTY.
+    if (!isSafeArgument(initialCommand))
+        initialCommand.clear();
+
+    if (port < 1 || port > 65535)
+        port = 22;
+    if (connectTimeout < 0 || connectTimeout > 3600)
+        connectTimeout = 10;
+
+    for (PortForward &forward : portForwards) {
+        if (!isSafeArgument(forward.listenHost))
+            forward.listenHost = QStringLiteral("127.0.0.1");
+        if (!isSafeArgument(forward.targetHost))
+            forward.targetHost.clear();
+        if (forward.listenPort < 1 || forward.listenPort > 65535)
+            forward.listenPort = 0;
+        if (forward.targetPort < 1 || forward.targetPort > 65535)
+            forward.targetPort = 0;
+    }
+}
+
 QString Session::destination() const
 {
     return sshDestination(user, host);
@@ -279,6 +344,9 @@ Session Session::fromJson(const QJsonObject &obj)
         s.name = s.host.isEmpty() ? QStringLiteral("Sesión") : s.host;
     if (s.type == Type::Local && s.shell.isEmpty())
         s.shell = defaultShellPath();
+    // fromJson() is only used for untrusted imports (encrypted sync and legacy
+    // sessions.json).  Never let a file decide which options ssh receives.
+    s.sanitizeForImport();
     return s;
 }
 

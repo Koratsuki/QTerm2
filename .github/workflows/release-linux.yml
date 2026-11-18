@@ -9,14 +9,19 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-linux-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-linux:
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -25,15 +30,33 @@ jobs:
             qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
             libxkbcommon-dev libssl-dev pkg-config \
             wget file libfuse2 fuse dpkg-dev rpm \
-            libsqlite3-dev libssh2-1-dev \
+            libsqlite3-dev libsecret-1-dev zsh \
             libgl1-mesa-dev libglu1-mesa-dev desktop-file-utils \
             debhelper devscripts
-          
+
       - name: Build
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja \
+            -DQTERM2_WARNINGS_AS_ERRORS=ON
           cmake --build build -j$(nproc)
-          
+
+      # Never publish an unverified binary: the release tag must pass the same
+      # suite the pull-request CI runs.
+      - name: Test
+        run: |
+          set +e
+          QT_QPA_PLATFORM=offscreen ctest --test-dir build \
+            --output-on-failure --no-tests=error > ctest.log 2>&1
+          rc=$?
+          cat ctest.log
+          if [ "$rc" -ne 0 ]; then
+            # Surface the failing assertion through check-run annotations so it
+            # is diagnosable without downloading the raw job log.
+            grep -E '(FAIL|Failed|FAILED|error|Error|expected:|actual:)' ctest.log | \
+              head -40 | while IFS= read -r line; do echo "::error::$line"; done
+            exit "$rc"
+          fi
+
       - name: Package AppImage
         run: |
           mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/scalable/apps
@@ -45,31 +68,81 @@ jobs:
           ln -sf usr/share/icons/hicolor/scalable/apps/QTerm2.svg AppDir/.DirIcon
           cp packaging/AppImage/AppRun AppDir/
           chmod +x AppDir/AppRun
-          wget -q https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
-          chmod +x appimagetool-x86_64.AppImage
-          ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir QTerm2-x86_64.AppImage --no-appstream
-          
+
+          # The AppImage must not require Qt installed on the host.  Bundle the
+          # shared libraries of the binary and of the Qt libs it pulls in, plus
+          # the Qt plugins (platforms, sqldrivers, imageformats, iconengines).
+          mkdir -p AppDir/usr/lib AppDir/usr/plugins
+          ldd build/QTerm2 | awk '/=> \// { print $3 }' | while read -r lib; do
+            cp -L "$lib" AppDir/usr/lib/
+          done
+          for lib in AppDir/usr/lib/libQt6*.so*; do
+            [ -e "$lib" ] || continue
+            ldd "$lib" | awk '/=> \// { print $3 }' | while read -r dep; do
+              cp -L "$dep" AppDir/usr/lib/ 2>/dev/null || true
+            done
+          done
+          QT_PLUGINS_DIR=$(qmake6 -query QT_INSTALL_PLUGINS 2>/dev/null || true)
+          if [ -z "$QT_PLUGINS_DIR" ] || [ ! -d "$QT_PLUGINS_DIR" ]; then
+            echo "No se encontraron plugins Qt6: el AppImage dependería del sistema" >&2
+            exit 1
+          fi
+          cp -r "$QT_PLUGINS_DIR"/* AppDir/usr/plugins/
+
+          APPIMAGE_TOOL=appimagetool-x86_64.AppImage
+          wget -q https://github.com/AppImage/appimagetool/releases/download/1.9.0/$APPIMAGE_TOOL
+          chmod +x $APPIMAGE_TOOL
+          ./$APPIMAGE_TOOL --appimage-extract-and-run AppDir QTerm2-x86_64.AppImage --no-appstream
+
       - name: Build DEB/RPM
         run: |
-          VERSION=$(git describe --tags --abbrev=0 | sed 's/v//')
+          set -e
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION=$(git describe --tags --abbrev=0 | sed 's/^v//')
+          fi
+          echo "Building packages for version ${VERSION}"
           cp -r packaging/debian .
           sed -i "s/qterm2 (.*)/qterm2 (${VERSION}-1)/" debian/changelog
-          sed -i 's/debhelper-compat (= 13)/debhelper-compat (= 12)/' debian/control || true
-          rm -rf build
-          dpkg-buildpackage -us -uc -b
+
+          emit_log() {
+            echo "::error::$1 failed (last 40 lines):"
+            tail -40 "$1" | while IFS= read -r line; do echo "::error::$line"; done
+          }
+
+          if ! dpkg-buildpackage -us -uc -b > dpkg.log 2>&1; then
+            cat dpkg.log
+            emit_log dpkg.log
+            exit 1
+          fi
+          tail -10 dpkg.log
           mv ../*.deb .
-          mkdir -p ~/rpmbuild/{SOURCES,SPECS}
-          tar czf ~/rpmbuild/SOURCES/qterm2-${VERSION}.tar.gz --exclude=.git .
-          sed "s/Version:.*/Version:        ${VERSION}/" packaging/rpm/qterm2.spec > ~/rpmbuild/SPECS/qterm2.spec
-          sed -i "s/Source0:.*/Source0:        qterm2-${VERSION}.tar.gz/" ~/rpmbuild/SPECS/qterm2.spec
-          rpmbuild -bb --nodeps ~/rpmbuild/SPECS/qterm2.spec
+
+          mkdir -p ~/rpmbuild/{SOURCES,SPECS,BUILD,RPMS,SRPMS}
+          # Only tracked sources: never ship build/ AppDir/ or generated artefacts.
+          git archive --format=tar.gz -o ~/rpmbuild/SOURCES/qterm2-${VERSION}.tar.gz HEAD
+          # git archive carries no compiled binary: hand it to rpmbuild as Source1.
+          cp build/QTerm2 ~/rpmbuild/SOURCES/QTerm2
+          sed -e "s/^Version:.*/Version:        ${VERSION}/" \
+              -e "s/^Source0:.*/Source0:        qterm2-${VERSION}.tar.gz/" \
+              packaging/rpm/qterm2.spec > ~/rpmbuild/SPECS/qterm2.spec
+          # --nodeps is needed on Ubuntu (no rpm build dependencies available);
+          # runtime requirements are declared in the spec's Requires: fields.
+          if ! rpmbuild -bb --nodeps ~/rpmbuild/SPECS/qterm2.spec > rpm.log 2>&1; then
+            cat rpm.log
+            emit_log rpm.log
+            exit 1
+          fi
+          tail -10 rpm.log
           mv ~/rpmbuild/RPMS/*/*.rpm .
-          
+
       - name: Cleanup appimagetool
         run: rm -f appimagetool-x86_64.AppImage
-          
+
       - name: Upload Linux Artifacts & Release
-        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             QTerm2-x86_64.AppImage

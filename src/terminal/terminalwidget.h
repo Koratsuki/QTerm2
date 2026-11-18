@@ -91,6 +91,8 @@ signals:
     void searchResult(bool found);
     void selectionChanged(bool hasSelection);
     void workingDirectoryChanged(const QString &path);
+    /** Bytes sent to the transport as a result of user input (keyboard/paste/IME). */
+    void userInput(const QByteArray &data);
 
 protected:
     void paintEvent(QPaintEvent *event) override;

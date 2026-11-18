@@ -55,6 +55,7 @@ signals:
     void activeTerminalChanged(TerminalWidget *terminal);
     void terminalFinished(TerminalWidget *terminal);
     void bellRang(TerminalWidget *terminal);
+    void terminalAdded(TerminalWidget *terminal);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

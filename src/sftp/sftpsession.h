@@ -14,7 +14,8 @@ public:
     explicit SftpSession(QObject *parent = nullptr);
     ~SftpSession() override;
 
-    bool open(const QString &host, int port, const QString &user);
+    bool open(const QString &host, int port, const QString &user,
+              const QString &keyFile = QString());
     void close();
     bool isOpen() const;
 
@@ -28,6 +29,8 @@ public:
     bool chmod(const QString &path, int mode);
     QByteArray readFile(const QString &path);
     bool writeFile(const QString &path, const QByteArray &data);
+
+    QString lastError() const { return m_service.lastError(); }
 
 signals:
     void opened();

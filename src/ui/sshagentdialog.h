@@ -4,6 +4,12 @@
 
 #include "ssh/sshagent.h"
 
+template <typename T> class QFutureWatcher;
+
+namespace Ui {
+class SshAgentDialog;
+}
+
 class QLabel;
 class QPushButton;
 class QTableWidget;
@@ -20,12 +26,17 @@ class SshAgentDialog : public QDialog
     Q_OBJECT
 public:
     explicit SshAgentDialog(const qterm2::ssh::AgentStatus &status,
-                            QWidget *parent = nullptr);
+                            QWidget *parent = nullptr, bool queryOnOpen = false);
+    ~SshAgentDialog() override;
 
 private:
     void applyStatus(const qterm2::ssh::AgentStatus &status);
     void refresh();
+    void startQuery();
+    void onQueryFinished();
 
+    Ui::SshAgentDialog *ui = nullptr;
+    QFutureWatcher<qterm2::ssh::AgentStatus> *m_watcher = nullptr;
     qterm2::ssh::AgentStatus m_status;
     QLabel *m_socket = nullptr;
     QLabel *m_state = nullptr;

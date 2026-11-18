@@ -4,7 +4,7 @@
 > fronteras que deben respetarse al añadir funcionalidades y el plan de
 > evolución hacia un gestor de terminales SSH profesional.
 >
-> Versión del documento: 1.9 · Esquema de base de datos: 4 · API de plugins: 2
+> Versión del documento: 2.0 · Esquema de base de datos: 4 · API de plugins: 2
 
 ---
 
@@ -201,7 +201,10 @@ La expansión es una función pura y no toca la base de datos ni el terminal.
 | `terminalsession.h` | Interfaz de transporte de bytes. |
 | `ptyterminalsession.{h,cpp}` | Transporte PTY local sobre `PtyProcess`. |
 | `ptyprocess.{h,cpp}` | `forkpty`, lectura con `QSocketNotifier`, escritura, resize, cierre. |
-| `terminalwidget.{h,cpp}` | Vista: pintado, teclado, ratón, IME, selección, búsqueda, scrollback, portapapeles. |
+| `terminalwidget.{h,cpp}` | Vista base: ciclo de vida, pintado, transporte y helpers de pantalla. |
+| `terminalwidget_events.cpp` | Entrada teclado/ratón/rueda/foco/redimensionado, IME, hints de tamaño y opciones de cursor/fuente (TU separado). |
+| `terminalwidget_search.cpp` | Búsqueda en scrollback/pantalla (TU separado de la misma clase). |
+| `terminalwidget_selection.cpp` | Selección, portapapeles y desplazamiento de viewport (TU separado). |
 
 ### 4.7 `plugins/`
 
@@ -214,8 +217,19 @@ La expansión es una función pura y no toca la base de datos ni el terminal.
 
 - `app/applicationcontext.{h,cpp}`: crea base de datos, ajustes, repositorio,
   store, credenciales, registro de comandos y plugins; ejecuta la migración.
-- `ui/mainwindow.{h,cpp}`: ventana, menús, toolbar, pestañas, splits,
-  operaciones de sesión y pegado de comandos.
+- `ui/mainwindow.{h,cpp}`: ventana, menús, toolbar, pestañas, splits y
+  preferencias.
+- `ui/mainwindow_sessions.cpp`: ciclo de vida de sesiones/pestañas, reconexión e
+  importación SSH (misma clase, TU separado).
+- `ui/mainwindow_tools.cpp`: paleta de comandos, snippets, búsqueda (local y
+  global) y diálogos de ayuda (misma clase, TU separado).
+- `ui/uihelpers.h`: helpers gráficos compartidos entre las unidades de
+  `MainWindow` (iconos de color por sesión).
+- `ui/preferencesdialog.{h,cpp}`: preferencias de terminal e idioma; recibe el
+  idioma efectivo para no resetearlo al reabrir.
+- `ui/sshintegration.{h,cpp}`: fachadas de import/export de `ssh_config`,
+  `known_hosts` y agente SSH; la consulta al agente se hace en un hilo de
+  trabajo (`QtConcurrent`) para no bloquear la GUI.
 - `ui/sidebar.{h,cpp}`: árbol de grupos, grupos virtuales de favoritos y
   recientes, filtro y menú contextual.
 - `ui/terminalpane.{h,cpp}`: contenedor de una o varias vistas de terminal.
@@ -382,7 +396,11 @@ transporte alternativo**, no como reemplazo obligatorio.
 | Destino | `usuario@host` (IPv6 entre corchetes) |
 
 Los argumentos extra del usuario se separan con `QProcess::splitCommand()` y se
-insertan como argv, **nunca** se pasan a un shell.
+insertan como argv, **nunca** se pasan a un shell. El destino va precedido de
+`--` para que OpenSSH no pueda interpretar un host hostile como opción, y
+`Session::isSafeArgument()` valida host, usuario y `ProxyJump` antes de
+construir el `ProcessSpec`. La importación de sesiones sanea todos estos campos
+con `Session::sanitizeForImport()`.
 
 ### 7.3 `~/.ssh/config`
 
@@ -431,7 +449,10 @@ lectura con opción de refrescar.
 - comprobar permisos de la clave privada;
 - obtener la clave pública para mostrarla o instalarla.
 
-La passphrase se pasa a `ssh-keygen` sin escribirla en disco; no se persiste.
+La passphrase se entrega a `ssh-keygen` mediante `SSH_ASKPASS`: un helper temporal
+`0700` la imprime bajo demanda, de modo que no aparece en `argv` ni en
+`/proc/<pid>/cmdline`. No se persiste. En Windows, donde no hay `/bin/sh`, se
+mantiene el argumento `-N` como mal menor.
 
 ---
 
@@ -444,6 +465,11 @@ La passphrase se pasa a `ssh-keygen` sin escribirla en disco; no se persiste.
 | Configuración no secreta | `~/.config/QTerm2/` |
 | Datos durables | `~/.local/share/QTerm2/qterm2.db` |
 | Caché desechable | `~/.cache/QTerm2/` |
+
+`AppPaths::ensure()` crea los tres directorios con `0700`. `Database::open()`
+fuerza `0600` en el `.db` y en sus sidecars `-wal`/`-shm`, de modo que ni una
+copia del árbol ni un `umask` permisivo expongan hosts, usuarios o rutas de
+claves privadas.
 
 ### 8.2 Esquema v4
 
@@ -558,6 +584,35 @@ mensaje claro. Nunca se "adivina" el esquema.
 namespaced (`terminal/fontSize`, `ui/darkTheme`, `startup/openLocalTab`…). No
 hay `QSettings` en runtime; solo se usa para leer el archivo legado.
 
+### 8.6 Exportación cifrada
+
+`SyncManager` exporta el catálogo completo (`Session::toJson()`) a un blob
+autenticado y lo importa de vuelta aplicando `upsert` sesión a sesión. Formato
+`Q2SE` v1, enteros big-endian:
+
+| Offset | Tamaño | Campo |
+|---|---|---|
+| 0 | 4 | magic `Q2SE` |
+| 4 | 1 | versión (1) |
+| 5 | 4 | iteraciones PBKDF2 |
+| 9 | 16 | sal |
+| 25 | 12 | nonce |
+| 37 | n | AES-256-GCM del JSON |
+| 37+n | 16 | tag GCM |
+
+La clave es PBKDF2-HMAC-SHA256 (210 000 iteraciones por defecto). La cabecera
+completa se autentica como *additional data*, así que alterar versión,
+iteraciones, sal o nonce invalida el tag. El número de iteraciones se acota a
+`[10 000, 5 000 000]` para que un archivo hostil no pueda provocar una espera
+arbitraria. `Crypto::isAvailable()` es `false` sin OpenSSL y en ese caso la
+exportación falla con un error explícito: no existe un cifrado débil de
+reserva, y los blobs XOR de versiones anteriores se rechazan a propósito.
+
+La escritura usa `QSaveFile` (temporal + rename) y permisos `0600`. El import
+valida magia, versión, iteraciones, JSON y que `sessions` sea un array antes de
+tocar la base de datos. `SyncManager` todavía no tiene entrada en la UI; los
+tests de arquitectura cubren el ciclo completo.
+
 ---
 
 ## 9. Seguridad
@@ -568,11 +623,15 @@ hay `QSettings` en runtime; solo se usa para leer el archivo legado.
 |---|---|
 | Robo de contraseñas/passphrases desde disco | Nunca se persisten. Solo Secret Service si el usuario lo pide. |
 | Secreto en logs o volcados | No se registran secretos ni entornos con credenciales. |
-| Inyección de comandos por nombre de host/usuario | `ProcessSpec` usa argv; no hay `sh -c`. |
+| Inyección de comandos por nombre de host/usuario | `ProcessSpec` usa argv (nunca `sh -c`), `Session::isSafeArgument()` rechaza valores que empiezan por `-` o contienen caracteres de control, y `--` termina las opciones antes del destino en `ssh`/`ssh-copy-id`. |
+| Inyección de directivas en `~/.ssh/config` | `configValue()` escapa `"` y `\`; las sesiones con saltos de línea se omiten; el archivo se escribe `0600`. |
+| Sesiones importadas de un archivo hostil | `Session::sanitizeForImport()` se aplica en `fromJson()`, en la importación cifrada, en la migración legada y en `~/.ssh/config`; la importación cifrada es transaccional. |
+| DoS por KDF en un export hostil | Iteraciones acotadas a `Crypto::kMaxIterations` (1 M); la cabecera es AAD. |
 | Host key desconocida aceptada a ciegas | Política explícita por sesión; por defecto `ask` (OpenSSH decide). |
 | Programa remoto escribe el portapapeles | OSC 52 ignorado. |
-| Plugin malicioso o incompatible | IID + versión + inicialización aislada; superficie mínima. |
+| Plugin malicioso o incompatible | IID + versión + inicialización aislada, permisos con confirmación/persistencia y verificación de integridad/firma (`.sha256`/`.sha256.sig`) cuando aplica; **no hay sandbox de proceso**: un `.so` nativo sigue siendo código de confianza. |
 | Clave privada legible por terceros | `KeyManager` comprueba permisos; `ssh-keygen` crea `0600`. |
+| Passphrase visible en `ps` | `SSH_ASKPASS` con helper temporal `0700`; nunca en `argv` (Unix). |
 | Registro de credenciales por `libsecret` no disponible | Backend `Unavailable` que falla de forma explícita; la app sigue funcionando. |
 
 ### 9.2 Reglas para secretos
@@ -583,16 +642,18 @@ hay `QSettings` en runtime; solo se usa para leer el archivo legado.
    `CredentialStore` con la clave `CredentialKey::sessionPassword(id)`; la UI
    solo recibirá el secreto en memoria y lo inyectará en el PTY cuando
    corresponda.
-4. La passphrase de una clave se pasa a `ssh-keygen` por entrada estándar o
-   argumento efímero, nunca por línea de comandos visible en `ps` cuando se
-   pueda evitar.
+4. La passphrase de una clave nunca se pasa por `argv`: en Unix se entrega vía
+   `SSH_ASKPASS` desde un helper temporal con permisos `0700`.
 
 ### 9.3 `extraArgs`
 
 Es una válvula de escape deliberada para usuarios avanzados. Se parsea con
 `QProcess::splitCommand()` y se pasa como argv a `ssh`. No se ejecuta en un
 shell, pero puede alterar el comportamiento de SSH (por ejemplo
-`-o ProxyCommand=...`). La UI debe advertirlo.
+`-o ProxyCommand=...`). La UI debe advertirlo. **Las sesiones importadas
+descartan este campo completo**: solo el usuario que lo escribe a mano puede
+introducir opciones. El destino va siempre precedido de `--`, de modo que un
+host o usuario importado que empiece por `-` no puede convertirse en opción.
 
 ### 9.4 Plugins
 
@@ -604,12 +665,22 @@ public:
     virtual int apiVersion() const = 0;
     virtual CommandRegistry *commands() const = 0;
     virtual SessionRepository *sessions() const = 0;
+    virtual SettingsStore *settings() const = 0;
+    virtual bool hasPermission(const QString &permission) const = 0;
+    virtual bool requestPermission(const QString &permission) = 0;
 };
 ```
 
-No recibe widgets, ni `QProcess`, ni acceso a credenciales en v1. Esto limita
-el daño de un plugin defectuoso o malicioso. Las capacidades nuevas se añaden
-en `v2` con interfaces separadas y revisión explícita.
+No recibe widgets, ni `QProcess`, ni acceso a credenciales. Esto limita el
+daño de un plugin defectuoso, pero **no lo sandboxea**: un `.so` nativo ya es
+código arbitrario. `requestPermission()` **persiste** la decisión
+(`plugins/permission.ids` / `plugins/perms/<id>`) y, en sesiones GUI
+interactivas, solicita confirmación explícita antes de conceder una capacidad
+nueva (en contextos no interactivos/headless deniega por defecto). La carga
+verifica integridad SHA-256 y firma criptográfica del manifiesto cuando hay
+sidecars/clave confiable; sigue sin **sandbox de proceso**. Las capacidades
+nuevas deben añadirse con interfaces separadas y revisión explícita, no
+ampliando esta interfaz in situ.
 
 ---
 
@@ -679,8 +750,9 @@ public:
 ### 10.4 Compatibilidad
 
 - Añadir un método a `PluginHost` **rompe** la ABI aunque sea virtual puro.
-- Por eso v2 será una **nueva interfaz** (`PluginHostV2`) con su propio IID o
-  una versión de API distinta.
+- La API 2 amplió `PluginHost` in situ y añadió `PluginV2`; los plugins deben
+  declarar `metadata().apiVersion == 2`. Cualquier cambio futuro de superficie
+  debe hacerse en una interfaz nueva con IID propio, no ampliando esta.
 - Los comandos de un plugin se eliminan al descargarlo
   (`unregisterCommand` por `pluginId`).
 
@@ -838,35 +910,33 @@ Variables útiles:
 
 ### Fase 3 — SFTP y túneles gestionados
 
-- [x] `SftpSession` como servicio separado (libssh2 o `sftp` interactivo).
-- [x] Panel de transferencias con cola, progreso y reanudación.
-- [x] Editor remoto seguro (descarga temporal, edición, subida).
-- [ ] Túneles `-L/-R/-D` gestionados desde UI con estado y reconexión.
-- [x] Backend `LibsshTerminalSession` opcional para canales nativos.
+- [x] SFTP experimental integrado: servicio/sesión vía OpenSSH (`ssh`/`scp`), **explorador UI**, **cola de transferencias asíncrona** (estados, reintento/cancelación/limpieza) y **editor remoto básico** (descargar, editar texto, guardar en remoto). Progreso detallado byte a byte y reanudación nativa dependen del backend; un backend SFTP nativo/interactivo (libssh2) queda como evolución opcional.
+- [x] Gestor global de túneles (`TunnelManager`) con procesos `ssh -N -L/-R/-D`, detección de puerto en uso, estado/error, **persistencia**, **auto-reconexión**, **captura de logs**, y UI para crear (sesión/manual), **editar**, iniciar/detener, ver log y alternar auto-reconexión.
 
 ### Fase 4 — extensibilidad
 
 - [x] Command Palette.
-- [x] Snippets con variables (`${host}`, `${user}`).
-- [x] Historial de comandos por sesión.
-- [x] API de plugins v2 (paneles, temas, backends) con revisión de permisos.
-- [x] Integración Docker/Kubernetes como plugins.
+- [x] Snippets con variables (`${host}`, `${user}`, `${port}`).
+- [ ] Historial de comandos por sesión (módulo no compilado).
+- [x] Permisos de plugins persistidos y con confirmación en GUI interactiva; **integridad SHA-256** (`.sha256`) y **verificación de firma criptográfica** de manifiesto (`.sha256.sig` + clave pública confiable) cuando OpenSSL está disponible. El **sandbox/aislamiento** de plugins nativos en proceso no es viable sin rediseño (proceso separado/IPC) y queda como decisión arquitectónica futura.
+- [ ] Integración Docker/Kubernetes como plugins (el ejemplo no se compila).
 
 ### Fase 5 — producto
 
 - [x] Búsqueda global en scrollback de todas las pestañas.
-- [x] Sesiones sincronizadas (exportar/importar cifrado).
-- [x] Telemetría **opt-in** y local.
-- [x] Empaquetado Flatpak/AppImage y firma.
+- [x] Exportación/importación cifrada con AES-256-GCM (sin entrada en la UI).
+- [ ] Telemetría **opt-in** y local (no existe en el código).
+- [x] Empaquetado AppImage/Flatpak y scripts deb/rpm.
 
 ---
 
 ## 14. Deuda técnica conocida
 
-1. **`TerminalWidget` sigue siendo grande** (~1.100 líneas) aunque ya no contiene
-   el parser. Próximo paso: extraer selección/scrollback y búsqueda a
-   colaboradores (`TerminalSelection`, `TerminalSearch`) para dejar la vista en
-   pintado e input.
+1. **`TerminalWidget` y `MainWindow` siguen siendo grandes** (~1.180 y
+   ~1.180 + 470 líneas respectivamente). Ya se extrajo la parte de sesiones de
+   `MainWindow` a `mainwindow_sessions.cpp`; el siguiente paso es extraer
+   selección/scrollback y búsqueda de `TerminalWidget` a colaboradores
+   (`TerminalSelection`, `TerminalSearch`).
 2. **Los perfiles de terminal no incluyen colores propios**: solo fuente,
    tamaño, scrollback, forma de cursor y parpadeo. Un esquema de color por
    sesión requeriría ampliar `TerminalProfile` y `Theme`.
@@ -884,6 +954,14 @@ Variables útiles:
    sesión tiene la opción activa.
 8. **La migración no valida el JSON legado con un esquema formal**; tolera
    campos ausentes, pero conviene un informe de entradas descartadas.
+9. **El plugin nativo no se verifica**: no hay firma ni confirmación para `.so`
+   en `~/.local/lib/qterm2/plugins`. Es código del propio usuario, pero un
+   malware con su acceso podría persistir ahí.
+10. **Las traducciones no se compilan en el build**: `qterm2_en.ts` está muy por
+    debajo del 100 % y el `.qm` se versiona precompilado; hace falta integrar
+    `lrelease` en CMake y homogeneizar el idioma de las cadenas `tr()`.
+11. **Quedan `.ui` huérfanos** de módulos experimentales eliminados; conviene
+    borrarlos en una pasada de limpieza separada.
 
 ---
 
@@ -918,3 +996,9 @@ Variables útiles:
    emulador para acomodarlo.
 8. Todo cambio de comportamiento relevante añade o actualiza un test en
    `archtest`, `smoketest` o `uitest`.
+
+
+### Módulos experimentales (estado actual)
+
+- **Compilados/integrados**: `src/sftp/*` (servicio/sesión/cola asíncrona vía OpenSSH) + `src/ui/sftp/sftpdialog.*` (explorador, cola con estados/reintento y editor remoto básico), `src/tunnels/*` + `src/ui/tunnels/tunneldialog.*` (gestor global con persistencia, auto-reconexión, logs y edición), `src/terminal/broadcast/*` (broadcast cableado) y `src/ui/networkdiscoverydialog.*` (descubrimiento SSH Avahi/mDNS o nmap, con creación de sesión desde resultado).
+- **Evoluciones opcionales**: progreso byte a byte/reanudación nativa y backend SFTP nativo (libssh2), mejoras adicionales de descubrimiento/UX.

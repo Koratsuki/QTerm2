@@ -230,9 +230,14 @@ void parseFile(const QString &path, ParseState &state,
 
 QString configValue(const QString &value)
 {
-    if (value.contains(QLatin1Char(' ')) || value.contains(QLatin1Char('\t')))
-        return QLatin1Char('"') + value + QLatin1Char('"');
-    return value;
+    // Escape before quoting: an embedded quote or backslash could otherwise
+    // end the token early and turn the rest of the value into a new directive.
+    QString escaped = value;
+    escaped.replace(QLatin1Char('\\'), QStringLiteral("\\\\"));
+    escaped.replace(QLatin1Char('"'), QStringLiteral("\\\""));
+    const bool needsQuotes = escaped != value
+        || value.contains(QLatin1Char(' ')) || value.contains(QLatin1Char('\t'));
+    return needsQuotes ? QLatin1Char('"') + escaped + QLatin1Char('"') : value;
 }
 
 QString aliasCandidate(const Session &session)
@@ -334,6 +339,8 @@ QVector<Session> sessionsFromSshConfig(const SshConfigDocument &document,
         session.notes = QStringLiteral("Importado desde %1:%2")
                             .arg(entry.sourcePath)
                             .arg(entry.line);
+        // HostName/User from an imported config are untrusted input.
+        session.sanitizeForImport();
         session.touchCreated();
         sessions.append(session);
     }
@@ -348,6 +355,11 @@ QString renderSshConfig(const QVector<Session> &sessions)
 
     for (const Session &session : sessions) {
         if (session.isLocal() || session.host.trimmed().isEmpty())
+            continue;
+        // Never emit a directive built from a value that could inject one.
+        if (!Session::isSafeArgument(session.host) || !Session::isSafeArgument(session.user)
+            || !Session::isSafeArgument(session.privateKey)
+            || !Session::isSafeArgument(session.proxyJump))
             continue;
 
         const QString alias = uniqueAlias(aliasCandidate(session), used);
@@ -375,6 +387,9 @@ QString renderSshConfig(const QVector<Session> &sessions)
         }
         for (const PortForward &forward : session.portForwards) {
             if (!forward.enabled || forward.listenPort <= 0)
+                continue;
+            if (!Session::isSafeArgument(forward.listenHost)
+                || !Session::isSafeArgument(forward.targetHost))
                 continue;
             const QString listen = forward.listenHost.trimmed().isEmpty()
                                        ? QStringLiteral("127.0.0.1")
@@ -462,6 +477,9 @@ bool writeManagedSshConfig(const QString &path, const QString &block,
             *errorMessage = QStringLiteral("No se pudo escribir %1").arg(expanded);
         return false;
     }
+    // OpenSSH refuses a config writable by group/others (and warns on a
+    // world-readable one).  Never rely on the process umask here.
+    file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
     file.write(output.join(QLatin1Char('\n')).toUtf8());
     if (!file.commit()) {
         if (errorMessage)

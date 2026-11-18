@@ -303,6 +303,39 @@ bool SqliteSessionRepository::upsert(Session &session, QString *errorMessage)
     return true;
 }
 
+bool SqliteSessionRepository::beginTransaction(QString *errorMessage)
+{
+    if (!m_database || !m_database->isOpen()
+        || !m_database->handle().transaction()) {
+        if (errorMessage)
+            *errorMessage = m_database && m_database->isOpen()
+                                ? m_database->handle().lastError().text()
+                                : QStringLiteral("La base de datos no está abierta.");
+        return false;
+    }
+    return true;
+}
+
+bool SqliteSessionRepository::commitTransaction(QString *errorMessage)
+{
+    if (!m_database || !m_database->isOpen()) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("La base de datos no está abierta.");
+        return false;
+    }
+    if (!m_database->handle().commit()) {
+        if (errorMessage)
+            *errorMessage = m_database->handle().lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool SqliteSessionRepository::rollbackTransaction()
+{
+    return m_database && m_database->isOpen() && m_database->handle().rollback();
+}
+
 bool SqliteSessionRepository::remove(const QString &id, QString *errorMessage)
 {
     if (!m_database || !m_database->isOpen()) {

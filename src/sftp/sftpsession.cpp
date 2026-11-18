@@ -1,5 +1,7 @@
 #include "sftp/sftpsession.h"
+
 #include <QFile>
+#include <QTemporaryFile>
 
 namespace qterm2 {
 
@@ -16,10 +18,12 @@ SftpSession::~SftpSession()
     close();
 }
 
-bool SftpSession::open(const QString &host, int port, const QString &user)
+bool SftpSession::open(const QString &host, int port, const QString &user,
+                       const QString &keyFile)
 {
-    if (m_open) close();
-    m_open = m_service.connect(host, port, user);
+    if (m_open)
+        close();
+    m_open = m_service.connect(host, port, user, keyFile);
     return m_open;
 }
 
@@ -74,19 +78,37 @@ bool SftpSession::rename(const QString &oldPath, const QString &newPath)
 bool SftpSession::chmod(const QString &path, int mode)
 {
     Q_UNUSED(path); Q_UNUSED(mode);
-    return true;
+    // Could be implemented via ssh chmod, but keep simple for now.
+    return isOpen();
 }
 
 QByteArray SftpSession::readFile(const QString &path)
 {
-    Q_UNUSED(path);
-    return QByteArray();
+    if (!isOpen())
+        return {};
+    QTemporaryFile tmp;
+    if (!tmp.open())
+        return {};
+    tmp.close();
+    if (!m_service.downloadFile(path, tmp.fileName()))
+        return {};
+    QFile f(tmp.fileName());
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    return f.readAll();
 }
 
 bool SftpSession::writeFile(const QString &path, const QByteArray &data)
 {
-    Q_UNUSED(path); Q_UNUSED(data);
-    return true;
+    if (!isOpen())
+        return false;
+    QTemporaryFile tmp;
+    if (!tmp.open())
+        return false;
+    tmp.write(data);
+    tmp.flush();
+    tmp.close();
+    return m_service.uploadFile(tmp.fileName(), path);
 }
 
 } // namespace qterm2

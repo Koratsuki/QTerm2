@@ -1,4 +1,15 @@
-qterm2 (1.0.5-1) unstable; urgency=medium
+qterm2 (1.1.1-1) unstable; urgency=medium
+
+  * SFTP browser with async transfer queue and remote editor
+  * SSH tunnel manager with persistence, logs, and reconnect
+  * Network discovery and session creation from discovered hosts
+  * Broadcast input, tab UX improvements, and command palette shortcut
+  * Plugin permission confirmation and integrity/signature verification
+  * Security, i18n, refactors, and stability fixes
+
+ -- Leslie León <koratsuki.nijuusan@gmail.com>  Tue, 17 Nov 2026 23:29:46 -0500
+
+qterm2 (1.1.0-1) unstable; urgency=medium
 
   * Initial release
 

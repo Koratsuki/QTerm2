@@ -21,6 +21,14 @@ const SecretSchema *credentialSchema()
             { "account", SECRET_SCHEMA_ATTRIBUTE_STRING },
             { nullptr, SecretSchemaAttributeType(0) },
         },
+        0,       /* reserved */
+        nullptr, /* reserved1 */
+        nullptr, /* reserved2 */
+        nullptr, /* reserved3 */
+        nullptr, /* reserved4 */
+        nullptr, /* reserved5 */
+        nullptr, /* reserved6 */
+        nullptr, /* reserved7 */
     };
     return &schema;
 }

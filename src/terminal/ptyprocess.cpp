@@ -10,6 +10,53 @@
 #include <QProcessEnvironment>
 #include <windows.h>
 
+namespace {
+
+// Quotes one argument using the CommandLineToArgvW rules.  QProcess would do
+// this for us, but this class needs the child's pipe handles for its Windows
+// PTY substitute.  Ad-hoc quoting previously left the closing quote out and
+// allowed arguments like `a" /c calc "` to inject new arguments.
+QString quoteWindowsArg(const QString &arg)
+{
+    bool needsQuotes = arg.isEmpty();
+    for (QChar c : arg) {
+        if (c == QLatin1Char(' ') || c == QLatin1Char('\t')
+            || c == QLatin1Char('"')) {
+            needsQuotes = true;
+            break;
+        }
+    }
+    if (!needsQuotes)
+        return arg;
+
+    // MSVC does not implicitly convert QLatin1Char to QString (GCC does), so
+    // construct the QString explicitly for portable Windows builds.
+    QString out(QLatin1Char('"'));
+    int backslashes = 0;
+    for (QChar c : arg) {
+        if (c == QLatin1Char('\\')) {
+            ++backslashes;
+            continue;
+        }
+        if (c == QLatin1Char('"')) {
+            out += QString(backslashes * 2 + 1, QLatin1Char('\\'));
+            out += QLatin1Char('"');
+            backslashes = 0;
+        } else {
+            if (backslashes > 0) {
+                out += QString(backslashes, QLatin1Char('\\'));
+                backslashes = 0;
+            }
+            out += c;
+        }
+    }
+    out += QString(backslashes * 2, QLatin1Char('\\'));
+    out += QLatin1Char('"');
+    return out;
+}
+
+} // namespace
+
 PtyProcess::PtyProcess(QObject *parent) : QObject(parent)
 {
 }
@@ -26,19 +73,14 @@ bool PtyProcess::start(const QString &program, const QStringList &args,
     Q_UNUSED(cols);
     Q_UNUSED(rows);
     Q_UNUSED(env);
-    closePty();
+    terminateProcess();
 
     if (program.trimmed().isEmpty())
         return false;
 
-    QString cmd = program;
-    for (const QString &arg : args) {
-        cmd += " ";
-        if (arg.contains(' ') || arg.contains('"'))
-            cmd += "\"" + arg;
-        else
-            cmd += arg;
-    }
+    QString cmd = quoteWindowsArg(program);
+    for (const QString &arg : args)
+        cmd += QLatin1Char(' ') + quoteWindowsArg(arg);
 
     SECURITY_ATTRIBUTES saAttr;
     saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
@@ -77,13 +119,17 @@ bool PtyProcess::start(const QString &program, const QStringList &args,
     PROCESS_INFORMATION piProcInfo;
     ZeroMemory(&piProcInfo, sizeof(PROCESS_INFORMATION));
 
+    std::wstring appW = program.toStdWString();
     std::wstring cmdW = cmd.toStdWString();
     std::wstring dirW = workDir.toStdWString();
 
+    // Naming the executable explicitly prevents `program` from being parsed as
+    // several tokens (e.g. "cmd.exe /c calc.exe") by CreateProcessW.
+    LPCWSTR appLine = appW.empty() ? NULL : appW.c_str();
     LPWSTR cmdLine = cmdW.empty() ? NULL : &cmdW[0];
     LPCWSTR dirLine = dirW.empty() ? NULL : dirW.c_str();
 
-    BOOL bSuccess = CreateProcessW(NULL,
+    BOOL bSuccess = CreateProcessW(appLine,
         cmdLine,
         NULL,
         NULL,
@@ -197,13 +243,36 @@ void PtyProcess::onActivated()
 #include <termios.h>
 #include <unistd.h>
 
+#include <QFileInfo>
 #include <QSocketNotifier>
 #include <QVector>
 
+namespace {
+
+// execve() does not search PATH and execvp() is not async-signal-safe, so the
+// executable is resolved in the parent *before* fork().
+QByteArray resolveProgram(const QString &program, const QProcessEnvironment &env)
+{
+    if (program.contains(QLatin1Char('/')))
+        return program.toLocal8Bit();
+    const QString path = env.contains(QStringLiteral("PATH"))
+                             ? env.value(QStringLiteral("PATH"))
+                             : QString::fromLocal8Bit(qgetenv("PATH"));
+    const QStringList dirs = path.split(QLatin1Char(':'), Qt::SkipEmptyParts);
+    for (const QString &dir : dirs) {
+        const QString candidate = dir + QLatin1Char('/') + program;
+        const QFileInfo info(candidate);
+        if (info.isFile() && info.isExecutable())
+            return candidate.toLocal8Bit();
+    }
+    return program.toLocal8Bit(); // execve fails with ENOENT; child exits 127
+}
+
+} // namespace
+
 PtyProcess::PtyProcess(QObject *parent) : QObject(parent)
 {
-    // A remote process closing its side must never terminate QTerm2.
-    ::signal(SIGPIPE, SIG_IGN);
+    // SIGPIPE is ignored once in main(); it is process-wide, not per-object.
 }
 
 PtyProcess::~PtyProcess()
@@ -215,24 +284,28 @@ bool PtyProcess::start(const QString &program, const QStringList &args,
                        int cols, int rows, const QString &workDir,
                        const QProcessEnvironment &env)
 {
-    closePty();
+    terminateProcess();
 
     if (program.trimmed().isEmpty())
         return false;
 
     // Everything the child needs is converted to raw C data *before* fork().
-    // Only async-signal-safe POSIX calls run between fork() and exec().
+    // Between fork() and execve() we only call chdir() and execve(), both
+    // async-signal-safe: no malloc-backed putenv()/setenv()/execvp().
     const QByteArray dirBytes = workDir.toLocal8Bit();
 
-    const QStringList envKeys = env.keys();
+    QProcessEnvironment childEnv = env;
+    if (!childEnv.contains(QStringLiteral("TERM")))
+        childEnv.insert(QStringLiteral("TERM"), QStringLiteral("xterm-256color"));
+    const QStringList envKeys = childEnv.keys();
     QVector<QByteArray> envStorage;
     envStorage.reserve(envKeys.size());
     for (const QString &key : envKeys)
-        envStorage.append(key.toLocal8Bit() + '=' + env.value(key).toLocal8Bit());
+        envStorage.append(key.toLocal8Bit() + '=' + childEnv.value(key).toLocal8Bit());
 
     QVector<QByteArray> argStorage;
     argStorage.reserve(args.size() + 1);
-    argStorage.append(program.toLocal8Bit());
+    argStorage.append(resolveProgram(program, childEnv));
     for (const QString &arg : args)
         argStorage.append(arg.toLocal8Bit());
 
@@ -243,9 +316,10 @@ bool PtyProcess::start(const QString &program, const QStringList &args,
     argPtrs.append(nullptr);
 
     QVector<char *> envPtrs;
-    envPtrs.reserve(envStorage.size());
+    envPtrs.reserve(envStorage.size() + 1);
     for (QByteArray &entry : envStorage)
         envPtrs.append(entry.data());
+    envPtrs.append(nullptr); // execve() requires a null-terminated envp
 
     struct winsize ws;
     std::memset(&ws, 0, sizeof(ws));
@@ -259,20 +333,13 @@ bool PtyProcess::start(const QString &program, const QStringList &args,
 
     if (pid == 0) {
         // ------------------------------------------------------------ child
-        if (!dirBytes.isEmpty())
-            (void)chdir(dirBytes.constData()); // best effort
-
-        // Replace environment if we built one.
-        if (!envPtrs.isEmpty()) {
-            // putenv takes ownership of the strings we appended; they live in envStorage.
-            for (char *ep : envPtrs)
-                putenv(ep);
+        if (!dirBytes.isEmpty()) {
+            if (chdir(dirBytes.constData()) != 0) {
+                // best effort: continue even if changing directory fails
+            }
         }
-
-        // Reasonable defaults for an interactive shell.
-        setenv("TERM", "xterm-256color", 1);
-
-        execvp(argPtrs[0], argPtrs.data());
+        // envp/argv were built in the parent; execve() is async-signal-safe.
+        execve(argPtrs[0], argPtrs.data(), envPtrs.data());
         _exit(127);
     }
 
@@ -337,7 +404,28 @@ void PtyProcess::resize(int cols, int rows)
 void PtyProcess::terminateProcess()
 {
     if (m_pid > 0) {
-        ::kill(m_pid, SIGHUP);
+        const pid_t pid = m_pid;
+        ::kill(pid, SIGHUP);
+        // A single waitpid(WNOHANG) returns 0 while the child is still alive
+        // (very likely right after SIGHUP, or if it ignores the signal).
+        // Dropping the PID there leaks a zombie and leaves an orphan running.
+        for (int i = 0; i < 20; ++i) {
+            int status = 0;
+            const pid_t reaped = ::waitpid(pid, &status, WNOHANG);
+            if (reaped == pid || reaped < 0) {
+                m_pid = -1;
+                closePty();
+                return;
+            }
+            (void)::poll(nullptr, 0, 50); // 50 ms, ~1 s grace period total
+        }
+        ::kill(pid, SIGKILL);
+        int status = 0;
+        pid_t reaped;
+        do {
+            reaped = ::waitpid(pid, &status, 0);
+        } while (reaped < 0 && errno == EINTR);
+        m_pid = -1; // reaped (or already gone): never lose track of the child
     }
     closePty();
 }
@@ -353,11 +441,8 @@ void PtyProcess::closePty()
         ::close(m_fd);
         m_fd = -1;
     }
-    if (m_pid > 0) {
-        int status = 0;
-        ::waitpid(m_pid, &status, WNOHANG);
-        m_pid = -1;
-    }
+    // Reaping is terminateProcess()/reapChild()'s job; closing the fd must not
+    // discard a PID we may still need to wait() for.
 }
 
 void PtyProcess::reapChild()

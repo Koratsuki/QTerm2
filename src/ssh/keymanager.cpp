@@ -6,8 +6,10 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QTemporaryDir>
 
 namespace qterm2::ssh {
 
@@ -101,18 +103,74 @@ bool generateEd25519(const QString &privateKeyPath, const QString &comment,
 
     QProcess proc;
     proc.setProgram(QStringLiteral("ssh-keygen"));
-    proc.setArguments({ QStringLiteral("-t"), QStringLiteral("ed25519"),
-                        QStringLiteral("-a"), QStringLiteral("100"),
-                        QStringLiteral("-f"), path,
-                        QStringLiteral("-C"), comment,
-                        QStringLiteral("-N"), passphrase });
+    QStringList arguments = { QStringLiteral("-t"), QStringLiteral("ed25519"),
+                              QStringLiteral("-a"), QStringLiteral("100"),
+                              QStringLiteral("-f"), path,
+                              QStringLiteral("-C"), comment };
+
+    // Passing the passphrase with -N would expose it in /proc/<pid>/cmdline for
+    // every local user while ssh-keygen runs.  On Unix we hand it to the
+    // OpenSSH askpass mechanism instead: a helper script, owner-only and inside
+    // a 0700 temporary directory, prints the passphrase on demand and is
+    // deleted when this function returns.
+    QTemporaryDir askpassDir;
+    bool usingAskpass = false;
+#ifndef Q_OS_WIN
+    if (!passphrase.isEmpty() && askpassDir.isValid()) {
+        const QString askpass = askpassDir.filePath(QStringLiteral("askpass.sh"));
+        QFile script(askpass);
+        const QByteArray encoded = passphrase.toUtf8().toBase64();
+        const QByteArray body = QByteArrayLiteral("#!/bin/sh\n")
+                                + "printf '%s' '" + encoded
+                                + "' | base64 -d; printf '\\n'\n";
+        if (script.open(QIODevice::WriteOnly)) {
+            const bool written = script.write(body) == body.size();
+            script.close();
+            if (written) {
+                QFile::setPermissions(askpass, QFile::ReadOwner | QFile::WriteOwner
+                                                   | QFile::ExeOwner);
+                QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+                env.insert(QStringLiteral("SSH_ASKPASS"), askpass);
+                env.insert(QStringLiteral("SSH_ASKPASS_REQUIRE"), QStringLiteral("force"));
+                if (!env.contains(QStringLiteral("DISPLAY")))
+                    env.insert(QStringLiteral("DISPLAY"), QStringLiteral(":0"));
+                proc.setProcessEnvironment(env);
+                usingAskpass = true;
+            }
+        }
+    }
+#endif
+    // Never pass a non-empty passphrase via -N: it leaks in the process
+    // command line.  With askpass configured, ssh-keygen obtains it from the
+    // helper.  Otherwise, write it twice to stdin (ssh-keygen prompts twice).
+    const bool writePassphraseToStdin = !passphrase.isEmpty() && !usingAskpass;
+    if (passphrase.isEmpty())
+        arguments << QStringLiteral("-N") << QString();
+    proc.setArguments(arguments);
     proc.start();
     if (!proc.waitForStarted(5000)) {
         if (errorMessage)
             *errorMessage = QStringLiteral("No se pudo ejecutar ssh-keygen.");
         return false;
     }
-    proc.waitForFinished(30000);
+    if (writePassphraseToStdin) {
+        const QByteArray pass = passphrase.toUtf8();
+        proc.write(pass);
+        proc.write("\n");
+        proc.write(pass);
+        proc.write("\n");
+        proc.closeWriteChannel();
+    }
+    if (!proc.waitForFinished(30000)) {
+        // Without this check a stalled ssh-keygen (e.g. waiting on the askpass
+        // helper) would report success with default exit values, and the
+        // temporary askpass directory would be deleted while still in use.
+        proc.kill();
+        proc.waitForFinished();
+        if (errorMessage)
+            *errorMessage = QStringLiteral("ssh-keygen tardó demasiado y se canceló.");
+        return false;
+    }
     if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0) {
         if (errorMessage) {
             QString out = QString::fromUtf8(proc.readAllStandardError()).trimmed();

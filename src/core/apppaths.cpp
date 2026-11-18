@@ -1,6 +1,7 @@
 #include "core/apppaths.h"
 
 #include <QDir>
+#include <QFile>
 #include <QStandardPaths>
 
 namespace qterm2 {
@@ -41,6 +42,10 @@ bool AppPaths::ensure(QString *errorMessage) const
                 *errorMessage = QStringLiteral("No se pudo crear el directorio %1").arg(dir);
             return false;
         }
+        // The database holds hosts, usernames and private-key paths.  Keep the
+        // whole tree owner-only instead of inheriting a permissive umask.
+        QFile::setPermissions(dir, QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                       | QFileDevice::ExeOwner);
     }
     return true;
 }

@@ -1,11 +1,18 @@
 # Build artifacts
 build/
+build-*/
+cmake-build-*/
+compile_commands.json
 
 # IDE
 .vscode/
+.idea/
+*.user
+*.autosave
 
 # CMake
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
 Makefile
+CTestTestfile.cmake

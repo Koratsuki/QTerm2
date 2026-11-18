@@ -11,6 +11,7 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
+#include <QProcess>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -29,13 +30,22 @@ namespace {
 
 int g_failures = 0;
 
+void emitFailure(const char *what)
+{
+    std::printf("  FAIL %s\n", what);
+    // GitHub Actions turns these into check-run annotations, which makes the
+    // exact failing assertion visible even when the raw job log is not.
+    if (qEnvironmentVariableIsSet("GITHUB_ACTIONS"))
+        std::printf("::error::[smoketest] %s\n", what);
+    ++g_failures;
+}
+
 void check(bool condition, const char *what)
 {
     if (condition) {
         std::printf("  ok   %s\n", what);
     } else {
-        std::printf("  FAIL %s\n", what);
-        ++g_failures;
+        emitFailure(what);
     }
 }
 
@@ -44,9 +54,12 @@ void checkEqual(const QString &actual, const QString &expected, const char *what
     if (actual == expected) {
         std::printf("  ok   %s\n", what);
     } else {
-        std::printf("  FAIL %s\n       expected: %s\n       actual:   %s\n",
-                    what, qPrintable(expected), qPrintable(actual));
-        ++g_failures;
+        emitFailure(what);
+        std::printf("       expected: %s\n       actual:   %s\n",
+                    qPrintable(expected), qPrintable(actual));
+        if (qEnvironmentVariableIsSet("GITHUB_ACTIONS"))
+            std::printf("::error::  expected: %s; actual: %s\n",
+                        qPrintable(expected), qPrintable(actual));
     }
 }
 
@@ -193,23 +206,60 @@ void testZsh()
         return;
     }
 
+    // Isolate zsh completely: `-f` skips all startup files, so the interactive
+    // `zsh-newuser-install` wizard can never swallow our first command.  Pass
+    // HOME/ZDOTDIR explicitly instead of mutating the process environment,
+    // which also keeps the other tests unaffected.
+    QTemporaryDir zshHome;
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    if (zshHome.isValid()) {
+        env.insert(QStringLiteral("HOME"), zshHome.path());
+        env.insert(QStringLiteral("ZDOTDIR"), zshHome.path());
+    }
+
     TerminalWidget terminal;
     terminal.resize(720, 400);
-    check(terminal.startShell(zsh, QDir::homePath()), "zsh starts in a PTY");
+    check(terminal.startProgram(zsh, QStringList{QStringLiteral("-f")},
+                                zshHome.path(), env),
+          "zsh starts in a PTY");
 
-    terminal.sendText(QStringLiteral("print -r -- 'ZSH·READY-OUT'\n"));
-
+    // Keep the typed command pure ASCII and emit the UTF-8 middle dot (U+00B7,
+    // bytes C2 B7) via printf octal escapes.  Two reasons:
+    //  - the raw token never appears in the echoed command line, so a single
+    //    occurrence proves zsh really executed it (not just terminal echo);
+    //  - zsh's line editor mangles multibyte input when the runner locale is C
+    //    (common in CI), so typing '·' directly is unreliable.  Generating the
+    //    bytes in the output keeps this independent of locale and echo config.
+    const QString command = QStringLiteral("printf 'ZSH\\302\\267READY-OUT\\n'\n");
     const QString token = QStringLiteral("ZSH·READY-OUT");
     QElapsedTimer timer;
+    QElapsedTimer resend;
     timer.start();
+    resend.start();
     QString text;
     while (timer.elapsed() < 8000) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         text = terminal.screenText();
-        if (text.count(token) >= 2)
+        if (text.count(token) >= 1)
             break;
+        // On slow runners the first keystrokes can arrive before zle is ready.
+        // Resending is harmless: each execution only adds another token.
+        if (resend.elapsed() >= 700) {
+            terminal.sendText(command);
+            resend.restart();
+        }
     }
-    check(text.count(token) >= 2, "zsh echoes UTF-8 output");
+    if (qEnvironmentVariableIsSet("QTERM2_TEST_DUMP")) {
+        std::printf("--- zsh screen (len=%zu) ---\n%s\n--------------\n",
+                    static_cast<size_t>(text.size()), qPrintable(QString(text).toUtf8().toHex()));
+        std::printf("--- zsh screen text ---\n%s\n--------------\n", qPrintable(text));
+    }
+    if (text.count(token) < 1 && qEnvironmentVariableIsSet("GITHUB_ACTIONS")) {
+        const QByteArray hex = QString(text).toUtf8().toHex();
+        std::printf("::error::[smoketest] zsh screen hex (first 600): %s\n",
+                    hex.left(600).constData());
+    }
+    check(text.count(token) >= 1, "zsh prints UTF-8 output");
 
     terminal.sendText(QStringLiteral("exit\n"));
     QEventLoop loop;
@@ -255,6 +305,31 @@ void testKeys()
     error.clear();
     check(!qterm2::ssh::KeyManager::generateEd25519(key, QStringLiteral("again"), QString(), &error),
           "existing key is not overwritten");
+
+#ifndef Q_OS_WIN
+    // A passphrase must never travel through argv.  ssh-keygen is fed by the
+    // askpass helper, so the generated key has to accept the right passphrase
+    // and reject a wrong one.
+    const QString protectedKey = dir.filePath(QStringLiteral("id_ed25519_protected"));
+    error.clear();
+    check(qterm2::ssh::KeyManager::generateEd25519(
+              protectedKey, QStringLiteral("qterm2@test"),
+              QStringLiteral("frase-secreta"), &error),
+          "passphrase-protected key generated");
+    QProcess keygen;
+    keygen.start(QStringLiteral("ssh-keygen"),
+                 { QStringLiteral("-y"), QStringLiteral("-P"), QStringLiteral("frase-secreta"),
+                   QStringLiteral("-f"), protectedKey });
+    keygen.waitForFinished(10000);
+    check(keygen.exitStatus() == QProcess::NormalExit && keygen.exitCode() == 0,
+          "correct passphrase unlocks the generated key");
+    keygen.start(QStringLiteral("ssh-keygen"),
+                 { QStringLiteral("-y"), QStringLiteral("-P"), QStringLiteral("incorrecta"),
+                   QStringLiteral("-f"), protectedKey });
+    keygen.waitForFinished(10000);
+    check(keygen.exitStatus() == QProcess::NormalExit && keygen.exitCode() != 0,
+          "wrong passphrase is rejected");
+#endif
 }
 
 } // namespace

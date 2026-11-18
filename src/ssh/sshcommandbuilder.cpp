@@ -66,6 +66,10 @@ ProcessSpec buildConnectSpec(const Session &session)
         return ProcessSpec::failure(QStringLiteral("El servidor no tiene un nombre de host."));
     if (session.port < 1 || session.port > 65535)
         return ProcessSpec::failure(QStringLiteral("El puerto debe estar entre 1 y 65535."));
+    if (!Session::isSafeArgument(session.host) || !Session::isSafeArgument(session.user)
+        || !Session::isSafeArgument(session.proxyJump))
+        return ProcessSpec::failure(QStringLiteral(
+            "La sesión contiene un host, usuario o ProxyJump no seguro."));
 
     spec.program = QStringLiteral("ssh");
     if (session.port != 22)
@@ -145,7 +149,10 @@ ProcessSpec buildConnectSpec(const Session &session)
     if (!remoteCommand.isEmpty())
         spec.args << QStringLiteral("-t");
 
-    spec.args << sshDestination(session.user, session.host);
+    // `--` terminates option parsing.  Without it a host (or user) beginning
+    // with '-' is interpreted by OpenSSH as an option; `-oProxyCommand=...`
+    // then executes a shell command before any connection is attempted.
+    spec.args << QStringLiteral("--") << sshDestination(session.user, session.host);
     spec.args << remoteCommand;
 
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -164,6 +171,10 @@ ProcessSpec buildInstallKeySpec(const Session &session)
     if (session.isLocal())
         return ProcessSpec::failure(
             QStringLiteral("Esta acción solo aplica a sesiones SSH."));
+    if (!Session::isSafeArgument(session.host) || !Session::isSafeArgument(session.user)
+        || !Session::isSafeArgument(session.proxyJump))
+        return ProcessSpec::failure(QStringLiteral(
+            "La sesión contiene un host, usuario o ProxyJump no seguro."));
 
     const QString pub = session.publicKeyPath();
     if (pub.isEmpty() || !QFileInfo::exists(pub)) {
@@ -187,7 +198,7 @@ ProcessSpec buildInstallKeySpec(const Session &session)
                   << QStringLiteral("IdentityFile=%1").arg(expandPath(session.privateKey));
     }
     spec.args << QStringLiteral("-o") << QStringLiteral("ConnectTimeout=20")
-              << sshDestination(session.user, session.host);
+              << QStringLiteral("--") << sshDestination(session.user, session.host);
 
     spec.environment = QProcessEnvironment::systemEnvironment();
     spec.ok = true;

@@ -43,7 +43,7 @@ SshConfigDialog::SshConfigDialog(const QVector<SshConfigEntry> &entries,
     m_table = new QTableWidget(0, 7, this);
     m_table->setObjectName(QStringLiteral("SshConfigTable"));
     m_table->setHorizontalHeaderLabels({ QString(), tr("Alias"), tr("Host"),
-                                         tr("User"), tr("Port"), tr("Llave"),
+                                         tr("Usuario"), tr("Puerto"), tr("Llave"),
                                          tr("Origen") });
     m_table->verticalHeader()->setVisible(false);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);

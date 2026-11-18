@@ -7,8 +7,6 @@
 #include "domain/session.h"
 #include "ui/theme.h"
 #include "ui/statusbar/statusbarmanager.h"
-#include "tunnels/tunnelmanager.h"
-#include "ui/tunnels/tunneldialog.h"
 
 class QAction;
 class QLabel;
@@ -25,8 +23,10 @@ class TerminalWidget;
 
 namespace qterm2 {
 class ApplicationContext;
+class BroadcastManager;
 class SessionStore;
 class SettingsStore;
+class TunnelManager;
 }
 
 class MainWindow : public QMainWindow
@@ -65,10 +65,11 @@ private:
     void showKnownHosts();
     void showSshAgent();
     void showSnippets();
-    void showNetworkDiscovery();
-    void showServerMonitor();
     void showCommandPalette();
     void showGlobalSearch();
+    void showTunnels();
+    void showSftp();
+    void showNetworkDiscovery();
     void updateSessionsMenu();
     void registerCommands();
 
@@ -94,8 +95,6 @@ private:
     void updateWelcomeState();
     void updateWindowTitle();
     void updateStatus();
-    void showTunnels();
-    void showPlugins();
     void updateZoomHint();
     void adjustFontSize(int delta);
     void resetFontSize();
@@ -108,7 +107,14 @@ private:
     void hideSearch();
     bool findInTerminal(bool forward);
 
+    // ---- broadcast -------------------------------------------------------
+    void setBroadcastEnabled(bool enabled);
+    void connectTerminalBroadcast(TerminalWidget *terminal);
+
     qterm2::ApplicationContext *m_context = nullptr;
+    qterm2::BroadcastManager *m_broadcast = nullptr;
+    qterm2::TunnelManager *m_tunnels = nullptr;
+    bool m_broadcastingInput = false;
     qterm2::SessionStore *m_store = nullptr;
     qterm2::SettingsStore *m_settings = nullptr;
 
@@ -125,7 +131,6 @@ private:
     QLabel *m_statusLeft = nullptr;
     QLabel *m_statusRight = nullptr;
     qterm2::StatusBarManager *m_statusBarManager = nullptr;
-    qterm2::TunnelManager *m_tunnelManager = nullptr;
     QMenu *m_sessionsMenu = nullptr;
     QAction *m_toggleSidebarAction = nullptr;
     QAction *m_darkThemeAction = nullptr;

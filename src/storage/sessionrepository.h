@@ -27,6 +27,11 @@ public:
                           QString *errorMessage = nullptr) = 0;
     virtual bool clearRecentSessions(QString *errorMessage = nullptr) = 0;
     virtual int count(QString *errorMessage = nullptr) const = 0;
+
+    /** Optional atomic batch support.  Backends without transactions no-op. */
+    virtual bool beginTransaction(QString *) { return true; }
+    virtual bool commitTransaction(QString *) { return true; }
+    virtual bool rollbackTransaction() { return true; }
 };
 
 } // namespace qterm2

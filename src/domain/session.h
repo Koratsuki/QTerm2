@@ -99,6 +99,21 @@ struct Session
     QString notes;
 
     bool isLocal() const { return type == Type::Local; }
+
+    /**
+     * True when `value` cannot be mistaken for a command-line option by an
+     * external tool (ssh, ssh-copy-id, telnet...).  Empty values are safe.
+     * Rejects a leading '-' and any control character (including newlines).
+     */
+    static bool isSafeArgument(const QString &value);
+
+    /**
+     * Drops fields that could inject options or new directives into external
+     * tools.  Called on every session read from an untrusted import (encrypted
+     * sync, legacy sessions.json, ~/.ssh/config).
+     */
+    void sanitizeForImport();
+
     QString destination() const;
     QString displayTarget() const;
     QString publicKeyPath() const;
