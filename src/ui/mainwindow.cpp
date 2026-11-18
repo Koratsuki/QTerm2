@@ -269,6 +269,10 @@ void MainWindow::buildUi()
     m_tabs->setElideMode(Qt::ElideRight);
     m_tabs->setUsesScrollButtons(true);
     m_tabs->setIconSize(QSize(10, 10));
+    // Keep Tab inside the terminal (MC/nvim/etc. use it). A focusable QTabBar
+    // steals Tab for focus navigation before TerminalWidget::keyPressEvent can
+    // forward it to the PTY. Tab switching is still available via Ctrl+Tab.
+    m_tabs->tabBar()->setFocusPolicy(Qt::NoFocus);
     m_stack->addWidget(m_tabs);
 
     m_welcome = buildWelcomePage();

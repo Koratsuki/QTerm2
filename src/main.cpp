@@ -74,7 +74,7 @@ int main(int argc, char *argv[])
     QApplication::setApplicationDisplayName(QStringLiteral("QTerm2"));
     QApplication::setOrganizationName(QStringLiteral("QTerm2"));
     QApplication::setOrganizationDomain(QStringLiteral("qterm2.local"));
-    QApplication::setApplicationVersion(QStringLiteral("1.1.1"));
+    QApplication::setApplicationVersion(QStringLiteral("1.1.2"));
     QApplication::setDesktopFileName(QStringLiteral("QTerm2"));
 
     QApplication::setStyle(QStyleFactory::create(QStringLiteral("Fusion")));

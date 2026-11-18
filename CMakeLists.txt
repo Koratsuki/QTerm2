@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 # Keep CMake, main.cpp, the Debian changelog and the RPM spec on one version.
-project(QTerm2 VERSION 1.1.1 LANGUAGES CXX)
+project(QTerm2 VERSION 1.1.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
